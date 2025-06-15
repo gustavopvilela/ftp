@@ -16,7 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 
 public class Cliente extends JFrame {
-    private static final String HOST = "26.153.236.54";
+    private static final String HOST = "localhost";
     private static final int PORTA = 12381;
 
     /* Componentes da interface */
@@ -27,15 +27,27 @@ public class Cliente extends JFrame {
     private JButton downloadButton;
     private JTextArea logArea;
 
+    private JTextField hostField;
+    private JTextField portaField;
+    private JButton conectarButton;
+    private JLabel conexaoStatusLabel;
+
     /* Estado da aplicação */
     private File pastaSelecionada;
     private String pastaSelecionadaId;
+    private String hostAtual;
+    private int portaAtual;
+    private boolean conectado = false;
 
     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm:ss:SSS");
 
     public Cliente() {
+        /* Coloca host e porta padrões de início */
+        hostAtual = HOST;
+        portaAtual = PORTA;
+
         inicializarGUI();
-        atualizarPastasServidor();
+        //atualizarPastasServidor();
     }
 
     public void inicializarGUI() {
@@ -43,18 +55,154 @@ public class Cliente extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
+        JPanel conexaoPanel = createConexaoPanel();
         JPanel uploadPanel = createUploadPanel();
         JPanel servidorPanel = createServidorPanel();
         JPanel logPanel = createLogPanel();
         JPanel statusPanel = createStatusPanel();
 
-        add(uploadPanel, BorderLayout.NORTH);
+        JPanel topPanel = new JPanel();
+        topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
+        topPanel.add(conexaoPanel);
+        topPanel.add(uploadPanel);
+
+        add(topPanel, BorderLayout.NORTH);
         add(servidorPanel, BorderLayout.CENTER);
         add(logPanel, BorderLayout.EAST);
         add(statusPanel, BorderLayout.SOUTH);
 
-        setSize(800, 600);
+        setSize(1000, 700);
         setLocationRelativeTo(null);
+
+        atualizarEstadoConexao();
+    }
+
+    private JPanel createConexaoPanel () {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panel.setBorder(new TitledBorder("Configuração do servidor"));
+
+        /* Campo para IP */
+        panel.add(new JLabel("Servidor:"));
+        hostField = new JTextField(hostAtual, 15);
+        hostField.setToolTipText("Digite o IP do servidor FTP");
+        panel.add(hostField);
+
+        panel.add(new JLabel("Porta:"));
+        portaField = new JTextField(String.valueOf(portaAtual), 6);
+        portaField.setToolTipText("Digite a porta do servidor FTP");
+        panel.add(portaField);
+
+        conectarButton = new JButton("Testar conexão");
+        conectarButton.addActionListener(this::testarConexao);
+        conectarButton.setToolTipText("Testar conexão com o servidor e aplicar configurações");
+        panel.add(conectarButton);
+
+        conexaoStatusLabel = new JLabel("Não conectado");
+        conexaoStatusLabel.setForeground(Color.RED);
+        panel.add(conexaoStatusLabel);
+
+        return panel;
+    }
+
+    private void testarConexao (ActionEvent e) {
+        String novoHost = hostField.getText().trim();
+        String portaTexto = portaField.getText().trim();
+
+        /* Validação dos campos */
+        if (novoHost.isEmpty()) {
+            mostrarErro("Por favor, digite o endereço do servidor");
+            hostField.requestFocus();
+            return;
+        }
+
+        int novaPorta;
+        try {
+            novaPorta = Integer.parseInt(portaTexto);
+            if (novaPorta < 1 || novaPorta > 65535) {
+                throw new NumberFormatException("Porta fora dos limites");
+            }
+        }
+        catch (NumberFormatException ex) {
+            mostrarErro("Porta inválida. Digite um número entre 1 e 65535");
+            portaField.requestFocus();
+            return;
+        }
+
+        /* Testa a conexão em uma nova thread para não travar a aplicação */
+        conectarButton.setEnabled(false);
+        conexaoStatusLabel.setText("Testando...");
+        conexaoStatusLabel.setForeground(Color.ORANGE);
+
+        new Thread(() -> {
+            boolean sucesso = false;
+            String mensagemErro = "";
+
+            try {
+                gerarMensagemLog("Testando conexão com " + novoHost + ": " + novaPorta);
+
+                /* Tenta uma conexão simples para ver se o servidor responde */
+                try (Socket socket = new Socket(novoHost, novaPorta)) {
+                    BufferedReader entrada =  new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                    socket.setSoTimeout(50000); // Timeout de 5 segundos para o teste
+                    String resposta = entrada.readLine();
+
+                    if (resposta != null) {
+                        sucesso = true;
+                        gerarMensagemLog("Conexão bem-sucedida. Resposta: " + resposta);
+                    }
+                }
+            }
+            catch (IOException ex) {
+                mensagemErro = ex.getMessage();
+                gerarMensagemLog("Erro na conexão: " + ex.getMessage());
+            }
+
+            final boolean conexaoSucesso = sucesso;
+            final String erro = mensagemErro;
+
+            SwingUtilities.invokeLater(() -> {
+                conectarButton.setEnabled(true);
+
+                if (conexaoSucesso) {
+                    hostAtual = novoHost;
+                    portaAtual = novaPorta;
+                    conectado = true;
+
+                    conexaoStatusLabel.setText("Conectado (" + hostAtual + ":" + portaAtual + ")");
+                    conexaoStatusLabel.setForeground(new Color(0, 128, 0));
+
+                    mostrarSucesso("Conexão estabelecida com sucesso!\nServidor: " + hostAtual + ":" + portaAtual);
+
+                    atualizarPastasServidor();
+                }
+                else {
+                    conectado = false;
+                    conexaoStatusLabel.setText("Erro na conexão");
+                    conexaoStatusLabel.setForeground(Color.RED);
+
+                    mostrarErro("Não foi possível conectar ao servidor.\nDetalhes: " + erro);
+                }
+
+                atualizarEstadoConexao();
+            });
+        }).start();
+    }
+
+    private void atualizarEstadoConexao () {
+        /* O upload só funciona se há conexão e pasta selecionada */
+        uploadButton.setEnabled(conectado && pastaSelecionada != null);
+
+        /* O botão de download funciona a depender da conexão */
+        downloadButton.setEnabled(conectado);
+
+        /* Atualiza o título da janela */
+        if (conectado) {
+            setTitle("Cliente FTP - Conectado a " + hostAtual + ":" + portaAtual);
+        }
+        else {
+            setTitle("Cliente FTP - Não conectado");
+        }
     }
 
     private JPanel createUploadPanel() {
@@ -88,7 +236,14 @@ public class Cliente extends JFrame {
 
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton refreshButton = new JButton("Atualizar lista");
-        refreshButton.addActionListener(e -> atualizarPastasServidor());
+        refreshButton.addActionListener(e -> {
+            if (conectado) {
+                atualizarPastasServidor();
+            }
+            else {
+                mostrarErro("Conecte-se ao servidor primeiro");
+            }
+        });
 
         downloadButton = new JButton("Baixar pasta selecionada");
         downloadButton.addActionListener(this::downloadPasta);
@@ -181,16 +336,15 @@ public class Cliente extends JFrame {
                     statusLabel.setText("Erro no upload.");
                 });
                 gerarMensagemLog("ERRO: " + ex.getMessage());
-                ex.printStackTrace(); // Debug: Ver stack trace completo
             }
         }).start();
     }
 
     private void executarUpload() {
         gerarMensagemLog("=== INICIANDO UPLOAD ===");
-        gerarMensagemLog("Conectando ao servidor " + HOST + ":" + PORTA);
+        gerarMensagemLog("Conectando ao servidor " + hostAtual + ":" + portaAtual);
 
-        try (Socket socket = new Socket(HOST, PORTA);
+        try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) { // AUTO-FLUSH habilitado
 
@@ -317,9 +471,7 @@ public class Cliente extends JFrame {
 
             // Atualiza interface
             final int arquivoAtual = i + 1;
-            SwingUtilities.invokeLater(() -> {
-                statusLabel.setText("Enviando " + arquivoAtual + "/" + totalArquivos + ": " + caminhoRelativo);
-            });
+            SwingUtilities.invokeLater(() -> statusLabel.setText("Enviando %d/%d: %s".formatted(arquivoAtual, totalArquivos, caminhoRelativo)));
 
             // PASSO 1: Enviar metadados do arquivo
             gerarMensagemLog("ENVIANDO: FILE:" + caminhoRelativo);
@@ -391,9 +543,7 @@ public class Cliente extends JFrame {
                 });
             }
             catch (Exception e) {
-                SwingUtilities.invokeLater(() -> {
-                    mostrarErro("Erro ao atualizar lista: " + e.getMessage());
-                });
+                SwingUtilities.invokeLater(() -> mostrarErro("Erro ao atualizar lista: %s".formatted(e.getMessage())));
                 gerarMensagemLog("ERRO ao atualizar lista: " + e.getMessage());
             }
         }).start();
@@ -402,7 +552,7 @@ public class Cliente extends JFrame {
     private List<String> getPastasServidor() throws Exception {
         List<String> pastas = new ArrayList<>();
 
-        try (Socket socket = new Socket(HOST, PORTA);
+        try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
 
@@ -494,7 +644,7 @@ public class Cliente extends JFrame {
             throw new Exception("Não foi possível criar o diretório: " + pastaAlvo.getAbsolutePath());
         }
 
-        try (Socket socket = new Socket(HOST, PORTA);
+        try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
 
@@ -591,11 +741,9 @@ public class Cliente extends JFrame {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         }
         catch (Exception e) {
-            e.printStackTrace();
+            System.out.println("Erro ao carregar look and feel: " + e.getMessage());
         }
 
-        SwingUtilities.invokeLater(() -> {
-            new Cliente().setVisible(true);
-        });
+        SwingUtilities.invokeLater(() -> new Cliente().setVisible(true));
     }
 }
