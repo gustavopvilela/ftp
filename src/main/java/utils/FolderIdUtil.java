@@ -18,60 +18,35 @@ public class FolderIdUtil {
     public static String obterId(File pasta) throws IOException {
         Path caminho = pasta.toPath();
 
-        /* Para POSIX */
-        PosixFileAttributeView posixView = Files.getFileAttributeView(caminho, PosixFileAttributeView.class);
-        if (posixView != null) {
-            return cache.computeIfAbsent(caminho, p -> {
-                try {
-                    return extrairId(posixView.readAttributes().fileKey().toString(), INO_PATTERN);
-                } catch (IOException ex) {
-                    throw new UncheckedIOException(ex);
+        return cache.computeIfAbsent(caminho, p ->{
+            try {
+                DosFileAttributes attrs = Files.readAttributes(p, DosFileAttributes.class);
+
+                Object fileKey = attrs.fileKey();
+
+                if (fileKey != null) {
+                    return fileKey.toString();
+                } else {
+                    return "path" + Math.abs(p.toAbsolutePath().toString().hashCode());
                 }
-            });
-        }
 
-        /* Para Windows */
-        DosFileAttributeView dosView = Files.getFileAttributeView(caminho, DosFileAttributeView.class);
-        if (dosView != null) {
-            return cache.computeIfAbsent(caminho, p -> {
-                try {
-                    return extrairId(dosView.readAttributes().fileKey().toString(), INDEX_PATTERN);
-                } catch (IOException ex) {
-                    throw new UncheckedIOException(ex);
-                }
-            });
-        }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
 
-        /* Para outros sistemas operacionais */
-        BasicFileAttributes basic = Files.readAttributes(caminho, BasicFileAttributes.class);
-        Object key = basic.fileKey();
-        if (key != null) {
-            String strKey = key.toString();
-            String id = Integer.toString(Math.abs(strKey.hashCode()));
-            gerarMensagemLog("ID genérico obtido: " + id + " (baseado em " + strKey + ")");
-            return id;
-        }
-
-        /* Caso nenhum desses funcione, há uma forma conforme o tamanho e a data de última modificação da pasta */
-        try {
-            String c = pasta.getAbsolutePath();
-            long ultimaModificacao = pasta.lastModified();
-            long tamanho = calcularTamanhoPasta(pasta);
-
-            int hash = (c + ultimaModificacao + tamanho).hashCode();
-            return String.valueOf(Math.abs(hash));
-        }
-        catch (Exception e) {
-            return String.valueOf(System.currentTimeMillis());
-        }
     }
 
     public static String extrairNomeOriginal (String pasta) {
-        int ultimoUnderline = pasta.lastIndexOf("_");
-        if (ultimoUnderline > 0) {
-            return pasta.substring(0, ultimoUnderline);
+
+        if (pasta == null || pasta.isEmpty()) {
+            return "";
         }
-        return pasta;
+        int ultimoUnderline = pasta.lastIndexOf("_");
+        if (ultimoUnderline == -1 || ultimoUnderline == 0) {
+            return pasta;
+        }
+        return pasta.substring(0, ultimoUnderline);
     }
 
     private static String extrairId(String rawKey, Pattern pattern) {

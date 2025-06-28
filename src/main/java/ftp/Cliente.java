@@ -285,7 +285,7 @@ public class Cliente extends JFrame {
 
         int resultado = chooser.showOpenDialog(this);
 
-        if (resultado != JFileChooser.CANCEL_OPTION) {
+        if (resultado != JFileChooser.APPROVE_OPTION) {
             return;
         }
 
@@ -648,7 +648,7 @@ public class Cliente extends JFrame {
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
 
-            socket.setSoTimeout(30000);
+            socket.setSoTimeout(120000);
             entrada.readLine();
 
             saida.println("DOWNLOAD_FOLDER " + pasta);

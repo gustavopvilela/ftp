@@ -2,6 +2,8 @@ package ftp;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 /* Classe de handler de cliente para o servidor. */
 public class ClienteHandler implements Runnable {
@@ -185,7 +187,7 @@ public class ClienteHandler implements Runnable {
     }
 
     /* Gerencia o download da pasta */
-    private void handleDownloadPasta (String nomePasta) {
+    private void handleDownloadPasta(String nomePasta) {
         try {
             File pastaFonte = new File(Servidor.getRoot(), nomePasta);
             if (!pastaFonte.exists() || !pastaFonte.isDirectory()) {
@@ -193,58 +195,74 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            saida.println("150 Iniciando nome da pasta: " + nomePasta);
+            saida.println("150 Iniciando transferência da pasta: " + nomePasta);
+            System.out.println("[Servidor LOG] Coletando arquivos da pasta: " + pastaFonte.getAbsolutePath());
 
-            enviarArquivos(pastaFonte, pastaFonte);
+            // ETAPA 1: Coletar todos os arquivos em uma lista
+            List<File> arquivosParaEnviar = new ArrayList<>();
+            coletarArquivosRecursivamente(pastaFonte, pastaFonte, arquivosParaEnviar);
 
-            saida.println("END_FOLDER");
-            saida.println("226 Download concluído");
-        }
-        catch (Exception e) {
-            saida.println("550 Erro no download: " + e.getMessage());
-        }
-    }
+            System.out.println("[Servidor LOG] " + arquivosParaEnviar.size() + " arquivos encontrados. Iniciando envio.");
 
-    /* Envia os arquivos para o cliente recursivamente */
-    private void enviarArquivos (File pasta, File pastaBase) throws IOException {
-        File[] arquivos = pasta.listFiles();
-        if (arquivos == null || arquivos.length == 0) return;
+            // ETAPA 2: Enviar os arquivos da lista, um por um
+            for (File arquivo : arquivosParaEnviar) {
+                String caminhoRelativo = pastaFonte.toPath().relativize(arquivo.toPath()).toString();
 
-        java.util.Arrays.sort(arquivos, java.util.Comparator.comparing(File::getName));
-
-        for (File arquivo : arquivos) {
-            if (arquivo.isDirectory()) {
-                enviarArquivos(arquivo, pastaBase);
-            }
-            else {
-                /* Verifica o caminho relativo */
-                String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString();
-
-                saida.println("FILE:" + caminhoRelativo.replace("\\","/"));
+                // Envia metadados do arquivo
+                System.out.println("[Servidor LOG] Enviando: " + caminhoRelativo + " (" + arquivo.length() + " bytes)");
+                saida.println("FILE:" + caminhoRelativo.replace("\\", "/"));
                 saida.println(arquivo.length());
 
-                /* Envia o conteúdo do arquivo */
-                long bytesEnviados = 0;
+                // Envia o conteúdo do arquivo
                 try (FileInputStream fis = new FileInputStream(arquivo)) {
-                    byte[] buffer = new byte[1024];
+                    byte[] buffer = new byte[4096];
                     int bytesLidos;
-
                     while ((bytesLidos = fis.read(buffer)) != -1) {
                         cliente.getOutputStream().write(buffer, 0, bytesLidos);
-                        bytesEnviados += bytesLidos;
                     }
                     cliente.getOutputStream().flush();
                 }
 
-                String resposta = entrada.readLine();
-                if ("OK".equals(resposta)) {
-                    System.out.println("✓ Confirmado: " + caminhoRelativo + " (" + bytesEnviados + " bytes)");
-                } else {
-                    System.err.println("✗ Erro na confirmação: " + caminhoRelativo + " - Resposta: " + resposta);
+                // Aguarda a confirmação do cliente antes de prosseguir
+                String respostaCliente = entrada.readLine();
+                if (respostaCliente == null || !respostaCliente.equals("OK")) {
+                    System.err.println("✗ Erro: Cliente não confirmou o recebimento do arquivo " + caminhoRelativo + ". Resposta: " + respostaCliente);
+                    throw new IOException("Confirmação do cliente falhou.");
                 }
+                System.out.println("✓ Confirmado: " + caminhoRelativo);
+            }
+
+            // Finaliza a comunicação
+            saida.println("END_FOLDER");
+            saida.println("226 Download concluído");
+            System.out.println("[Servidor LOG] Transferência da pasta " + nomePasta + " concluída.");
+
+        } catch (Exception e) {
+            System.err.println("Erro crítico durante o download no servidor: " + e.getMessage());
+            // Não envie uma resposta de erro aqui se a conexão já foi perdida,
+            // pois isso pode causar outra exceção.
+            // saida.println("550 Erro no download: " + e.getMessage());
+        }
+    }
+    private void coletarArquivosRecursivamente(File diretorio, File base, List<File> todosArquivos) {
+        File[] conteudo = diretorio.listFiles();
+        if (conteudo == null) return;
+
+        // Ordena para consistência
+        java.util.Arrays.sort(conteudo);
+
+        for (File item : conteudo) {
+            if (item.isFile()) {
+                todosArquivos.add(item);
+            }
+        }
+        for (File item : conteudo) {
+            if (item.isDirectory()) {
+                coletarArquivosRecursivamente(item, base, todosArquivos);
             }
         }
     }
+
 
     private void deletarPasta (File pasta) {
         File[] arquivos = pasta.listFiles();
