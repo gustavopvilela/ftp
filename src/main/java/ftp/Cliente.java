@@ -648,10 +648,10 @@ public class Cliente extends JFrame {
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
 
+            socket.setSoTimeout(30000);
             entrada.readLine();
 
             saida.println("DOWNLOAD_FOLDER " + pasta);
-            saida.flush();
 
             String resposta = entrada.readLine();
             gerarMensagemLog("Servidor: " + resposta);
@@ -660,12 +660,15 @@ public class Cliente extends JFrame {
                 throw new Exception("Servidor recusou o download: " + resposta);
             }
 
-            //receberArquivos(pasta, socket, entrada, saida);
             receberArquivos(pastaAlvo, socket, entrada, saida);
 
-            resposta = entrada.readLine(); // END_FOLDER
+            //resposta = entrada.readLine(); // END_FOLDER
             resposta = entrada.readLine(); // 226 Download concluído
             gerarMensagemLog("Download finalizado: " + resposta);
+
+            if (resposta == null || !resposta.startsWith("226")) {
+                throw new Exception("Download falhou ou resposta final inesperada do servidor: " + resposta);
+            }
         }
     }
 

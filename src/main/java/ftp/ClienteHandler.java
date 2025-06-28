@@ -77,7 +77,7 @@ public class ClienteHandler implements Runnable {
 
             saida.println("150 Listando pastas");
             for (File pasta : pastas) {
-                saida.println("PASTA:\t" + pasta.getName());
+                saida.println("PASTA:" + pasta.getName());
             }
             saida.println("226 Lista completa");
         }
@@ -149,18 +149,28 @@ public class ClienteHandler implements Runnable {
 
             if (linha.startsWith("FILE:")) {
                 String nomeArquivo = linha.substring(5);
-                int tamanhoArquivo = Integer.parseInt(entrada.readLine());
+                long tamanhoArquivo = Long.parseLong(entrada.readLine());
 
                 File arquivoAlvo = new File(pastaAlvo, nomeArquivo);
-                arquivoAlvo.getParentFile().mkdirs();
+
+                File diretorioPai = arquivoAlvo.getParentFile();
+                if (diretorioPai != null && !diretorioPai.exists()) {
+                    boolean criado = diretorioPai.mkdirs();
+                    if (!criado) {
+                        System.err.println("ERRO: Não foi possível criar diretório: " + diretorioPai.getAbsolutePath());
+                        saida.println("ERROR");
+                        continue;
+                    }
+                    System.out.println("Diretório criado: " + diretorioPai.getAbsolutePath());
+                }
 
                 /* Recebe o conteúdo do arquivo */
                 try (FileOutputStream fos = new  FileOutputStream(arquivoAlvo)) {
                     byte[] buffer = new byte[1024];
-                    int totalRecebido = 0;
+                    long totalRecebido = 0;
 
                     while (totalRecebido < tamanhoArquivo) {
-                        int bytesParaLer = Math.min(buffer.length, tamanhoArquivo - totalRecebido);
+                        int bytesParaLer = (int) Math.min(buffer.length, tamanhoArquivo - totalRecebido);
                         int bytesLidos = cliente.getInputStream().read(buffer, 0, bytesParaLer);
 
                         if (bytesLidos == -1) break;
@@ -200,28 +210,38 @@ public class ClienteHandler implements Runnable {
         File[] arquivos = pasta.listFiles();
         if (arquivos == null || arquivos.length == 0) return;
 
+        java.util.Arrays.sort(arquivos, java.util.Comparator.comparing(File::getName));
+
         for (File arquivo : arquivos) {
             if (arquivo.isDirectory()) {
                 enviarArquivos(arquivo, pastaBase);
             }
             else {
                 /* Verifica o caminho relativo */
-                String caminhoRelativo = pastaBase.toPath().relativize(pasta.toPath()).toString();
+                String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString();
 
-                saida.println("FILE:" + caminhoRelativo);
+                saida.println("FILE:" + caminhoRelativo.replace("\\","/"));
                 saida.println(arquivo.length());
 
                 /* Envia o conteúdo do arquivo */
+                long bytesEnviados = 0;
                 try (FileInputStream fis = new FileInputStream(arquivo)) {
                     byte[] buffer = new byte[1024];
                     int bytesLidos;
 
                     while ((bytesLidos = fis.read(buffer)) != -1) {
                         cliente.getOutputStream().write(buffer, 0, bytesLidos);
+                        bytesEnviados += bytesLidos;
                     }
+                    cliente.getOutputStream().flush();
                 }
 
-                entrada.readLine();
+                String resposta = entrada.readLine();
+                if ("OK".equals(resposta)) {
+                    System.out.println("✓ Confirmado: " + caminhoRelativo + " (" + bytesEnviados + " bytes)");
+                } else {
+                    System.err.println("✗ Erro na confirmação: " + caminhoRelativo + " - Resposta: " + resposta);
+                }
             }
         }
     }
