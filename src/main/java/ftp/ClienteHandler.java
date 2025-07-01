@@ -176,7 +176,7 @@ public class ClienteHandler implements Runnable {
     }
 
     /* Gerencia o download da pasta */
-    private void handleDownloadPasta (String nomePasta) {
+    private void handleDownloadPasta(String nomePasta) {
         try {
             File pastaFonte = new File(Servidor.getRoot(), nomePasta);
             if (!pastaFonte.exists() || !pastaFonte.isDirectory()) {
@@ -184,14 +184,19 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            saida.println("150 Iniciando nome da pasta: " + nomePasta);
+            saida.println("150 Iniciando download da pasta: " + nomePasta);
 
+            // Inicia o envio recursivo dos arquivos da pasta
             enviarArquivos(pastaFonte, pastaFonte);
 
+            // Sinaliza o fim da transferência para o cliente
             saida.println("END_FOLDER");
+            saida.flush(); // Garante o envio imediato
+
             saida.println("226 Download concluído");
-        }
-        catch (Exception e) {
+            saida.flush();
+        } catch (Exception e) {
+            System.err.println("Erro no download: " + e.getMessage());
             saida.println("550 Erro no download: " + e.getMessage());
         }
     }
@@ -203,44 +208,40 @@ public class ClienteHandler implements Runnable {
             return;
         }
 
-        // Ordena os arquivos para garantir uma ordem consistente no envio.
+        // Ordena para manter a consistência
         Arrays.sort(arquivos);
 
         for (File arquivo : arquivos) {
-            // Se for um diretório, chama a função recursivamente
             if (arquivo.isDirectory()) {
+                // Se for um diretório, chama a função recursivamente
                 enviarArquivos(arquivo, pastaBase);
             } else {
-                // Calcula o caminho relativo do arquivo em relação à pasta base do download.
-                // Isso garante que a estrutura de pastas seja recriada no cliente.
-                String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString();
+                // Se for um arquivo, envia seus dados
 
-                // Substitui o separador de arquivos do sistema pelo separador de URL ("/") para consistência.
+                // 1. Calcula o caminho relativo para manter a estrutura de pastas no cliente
+                String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString();
                 caminhoRelativo = caminhoRelativo.replace(File.separator, "/");
 
-                // Envia o comando FILE: com o caminho relativo.
+                // 2. Envia os metadados do arquivo (nome e tamanho)
                 saida.println("FILE:" + caminhoRelativo);
-                // Envia o tamanho do arquivo.
                 saida.println(arquivo.length());
-                saida.flush(); // Garante o envio imediato dos metadados.
+                saida.flush(); // ESSENCIAL: Garante que o cliente receba os metadados antes dos dados
 
-                /* Envia o conteúdo do arquivo */
+                // 3. Envia o conteúdo binário do arquivo
                 try (FileInputStream fis = new FileInputStream(arquivo)) {
                     byte[] buffer = new byte[4096];
                     int bytesLidos;
                     while ((bytesLidos = fis.read(buffer)) != -1) {
                         cliente.getOutputStream().write(buffer, 0, bytesLidos);
                     }
-                    cliente.getOutputStream().flush();
+                    cliente.getOutputStream().flush(); // ESSENCIAL: Garante que todos os bytes do arquivo foram enviados
                 }
 
-                // Aguarda a confirmação "OK" do cliente antes de enviar o próximo arquivo.
-                // Isso cria um fluxo sincronizado e confiável.
-                String confirmacao = entrada.readLine();
-                if (!"OK".equals(confirmacao)) {
-                    System.err.println("Cliente não confirmou o recebimento do arquivo: " + caminhoRelativo + ". Abortando download.");
-                    // Para a transferência se o cliente não confirmar.
-                    return;
+                // 4. Aguarda a confirmação do cliente para sincronizar a transferência
+                String confirmacao = entrada.readLine(); // Espera o "OK" do cliente
+                if (confirmacao == null || !confirmacao.equals("OK")) {
+                    System.err.println("Falha na confirmação do cliente para o arquivo: " + caminhoRelativo);
+                    throw new IOException("Confirmação do cliente falhou.");
                 }
             }
         }

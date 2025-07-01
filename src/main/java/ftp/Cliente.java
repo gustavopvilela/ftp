@@ -635,41 +635,43 @@ public class Cliente extends JFrame {
     private void executarDownload(String pasta, File localSalvamento) throws Exception {
         gerarMensagemLog("=== INICIANDO DOWNLOAD DA PASTA: " + pasta + " ===");
 
+        // Extrai o nome original da pasta para criar o diretório de destino
         String nomeOriginal = FolderIdUtil.extrairNomeOriginal(pasta);
         File pastaAlvo = new File(localSalvamento, nomeOriginal);
 
+        // Garante que o diretório de destino exista
         if (!pastaAlvo.exists() && !pastaAlvo.mkdirs()) {
             throw new IOException("Não foi possível criar o diretório de destino: " + pastaAlvo.getAbsolutePath());
         }
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
+             // Usar BufferedReader para ler linhas de texto e o InputStream para dados binários
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             // Habilita o auto-flush para garantir que os comandos sejam enviados imediatamente.
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) {
 
             socket.setSoTimeout(30000); // Timeout de 30 segundos
 
-            // Lê a mensagem de boas-vindas do servidor (ex: "220 Servidor Pronto")
+            // 1. Ler a mensagem de boas-vindas do servidor
             String resposta = entrada.readLine();
             gerarMensagemLog("SERVIDOR (conexão): " + resposta);
 
-            // Envia o comando para iniciar o download
+            // 2. Enviar o comando para iniciar o download
             gerarMensagemLog("ENVIANDO: DOWNLOAD_FOLDER " + pasta);
             saida.println("DOWNLOAD_FOLDER " + pasta);
 
-            // Lê a resposta do servidor para o comando de download
+            // 3. Ler a resposta do servidor para o comando de download
             resposta = entrada.readLine();
             gerarMensagemLog("SERVIDOR (download): " + resposta);
 
-            if (!resposta.startsWith("150")) {
+            if (resposta == null || !resposta.startsWith("150")) {
                 throw new IOException("Servidor recusou a solicitação de download: " + resposta);
             }
 
-            // Chama o método para receber os arquivos, que já estava correto.
-            receberArquivos(pastaAlvo, socket, entrada, saida);
+            // 4. Inicia o processo de recebimento dos arquivos
+            receberArquivos(pastaAlvo, socket.getInputStream(), entrada, saida);
 
-            // Após `receberArquivos` terminar (ao encontrar "END_FOLDER"),
-            // o servidor enviará uma mensagem final de conclusão.
+            // 5. Após o loop de recebimento, o servidor envia uma mensagem final.
+            // A leitura do "226" deve ocorrer APÓS o loop de END_FOLDER.
             resposta = entrada.readLine();
             gerarMensagemLog("SERVIDOR (fim): " + resposta);
 
@@ -686,42 +688,43 @@ public class Cliente extends JFrame {
     }
 
     /* Função para receber os arquivos do servidor durante o download */
-    private void receberArquivos(File pastaDestino, Socket socket, BufferedReader entrada, PrintWriter saida) throws Exception {
+    private void receberArquivos(File pastaDestino, InputStream inputStream, BufferedReader entrada, PrintWriter saida) throws Exception {
         String linha;
 
-        while ((linha = entrada.readLine()) != null) {
-            if (linha.equals("END_FOLDER")) {
-                break;
-            }
+        // Loop principal para processar os comandos do servidor
+        while ((linha = entrada.readLine()) != null && !linha.equals("END_FOLDER")) {
 
             if (linha.startsWith("FILE:")) {
+                // Extrai o nome e o tamanho do arquivo dos metadados
                 String nomeArquivo = linha.substring(5);
                 long tamanhoArquivo = Long.parseLong(entrada.readLine());
 
                 gerarMensagemLog("Recebendo: " + nomeArquivo + " (" + tamanhoArquivo + " bytes)");
+                statusLabel.setText("Baixando: " + nomeArquivo);
 
-                // Criando o arquivo alvo dentro da pasta de destino
                 File arquivoAlvo = new File(pastaDestino, nomeArquivo);
 
-                // CORREÇÃO PRINCIPAL: Verificação segura antes de chamar mkdirs()
+                // Garante que a estrutura de diretórios seja criada
                 File diretorioPai = arquivoAlvo.getParentFile();
                 if (diretorioPai != null && !diretorioPai.exists()) {
                     if (!diretorioPai.mkdirs()) {
-                        throw new Exception("Não foi possível criar o diretório: " + diretorioPai.getAbsolutePath());
+                        throw new IOException("Não foi possível criar o diretório: " + diretorioPai.getAbsolutePath());
                     }
                 }
 
-                // Recebendo o conteúdo do arquivo
+                // Recebe o conteúdo do arquivo
                 try (FileOutputStream fos = new FileOutputStream(arquivoAlvo)) {
-                    byte[] buffer = new byte[1024];
+                    byte[] buffer = new byte[4096];
                     long totalRecebido = 0;
 
                     while (totalRecebido < tamanhoArquivo) {
-                        int bytesParaLer = (int)Math.min(buffer.length, tamanhoArquivo - totalRecebido);
-                        int bytesLidos = socket.getInputStream().read(buffer, 0, bytesParaLer);
+                        // Calcula quanto ainda precisa ser lido para não ultrapassar o tamanho do arquivo
+                        int bytesParaLer = (int) Math.min(buffer.length, tamanhoArquivo - totalRecebido);
+                        int bytesLidos = inputStream.read(buffer, 0, bytesParaLer);
 
                         if (bytesLidos == -1) {
-                            throw new Exception("Conexão perdida durante o download do arquivo: " + nomeArquivo);
+                            // Se o stream fechar inesperadamente, lança um erro
+                            throw new EOFException("Conexão perdida durante o download do arquivo: " + nomeArquivo);
                         }
 
                         fos.write(buffer, 0, bytesLidos);
@@ -729,10 +732,12 @@ public class Cliente extends JFrame {
                     }
                 }
 
+                // Envia a confirmação "OK" para o servidor, sincronizando a transferência
                 saida.println("OK");
-                saida.flush();
             }
         }
+        // Quando o laço termina (porque leu "END_FOLDER"), a função retorna.
+        // A leitura da resposta "226" final fica no método executarDownload.
     }
 
     private void gerarMensagemLog (String mensagem) {
