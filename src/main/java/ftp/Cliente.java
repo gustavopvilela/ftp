@@ -285,7 +285,7 @@ public class Cliente extends JFrame {
 
         int resultado = chooser.showOpenDialog(this);
 
-        if (resultado != JFileChooser.CANCEL_OPTION) {
+        if (resultado != JFileChooser.APPROVE_OPTION) {
             return;
         }
 
