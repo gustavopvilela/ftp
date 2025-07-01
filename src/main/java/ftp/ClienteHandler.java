@@ -188,30 +188,28 @@ public class ClienteHandler implements Runnable {
 
             // 1. INFORMA AO CLIENTE QUE O STREAMING VAI COMEÇAR
             saida.println("150 Iniciando streaming da pasta como arquivo ZIP.");
-            saida.flush();
+            saida.flush(); // Garante que o cliente receba esta mensagem antes do stream de bytes
 
             // 2. CRIA UM ZIP STREAM DIRETAMENTE PARA O OUTPUTSTREAM DO SOCKET
+            // O try-with-resources vai fechar o zos e o socket subjacente ao final,
+            // o que sinaliza o fim da transmissão para o cliente.
             try (ZipOutputStream zos = new ZipOutputStream(cliente.getOutputStream())) {
                 adicionarPastaAoZip(pastaFonte, pastaFonte, zos);
-            } // O try-with-resources garante que o zos.close() seja chamado, finalizando o ZIP.
+            } // <- AQUI O ZOS É FECHADO, O SOCKET É FECHADO, E A OPERAÇÃO TERMINA.
 
-            cliente.getOutputStream().flush();
+            System.out.println("Transferência por stream para o cliente " + cliente.getInetAddress() + " concluída.");
 
-            // 3. AGUARDA CONFIRMAÇÃO DO CLIENTE E ENVIA RESPOSTA FINAL
-            // É importante ler a confirmação APÓS o stream ter sido fechado.
-            String confirmacao = entrada.readLine();
-            if ("STREAM_RECEIVED".equals(confirmacao)) {
-                saida.println("226 Transferência por stream concluída com sucesso.");
-            } else {
-                saida.println("550 Ocorreu um erro, o cliente não confirmou o recebimento.");
-            }
-
+        } catch (IOException e) {
+            // A exceção "Socket closed" ou "Connection reset by peer" pode acontecer aqui
+            // se o cliente desconectar abruptamente, o que é um comportamento esperado.
+            System.err.println("Erro durante o streaming para o cliente " + cliente.getInetAddress() + ": " + e.getMessage());
         } catch (Exception e) {
-            System.err.println("Erro no download (ZIP Stream): " + e.getMessage());
-            // Não podemos enviar uma mensagem de erro aqui se o socket já estiver sendo usado para o ZIP
+            System.err.println("Erro inesperado no download (ZIP Stream): " + e.getMessage());
         }
+        // Não há mais código aqui. A thread do handler terminará naturalmente.
     }
 
+    // O método adicionarPastaAoZip permanece o mesmo.
     private void adicionarPastaAoZip(File pasta, File pastaBase, ZipOutputStream zos) throws IOException {
         File[] arquivos = pasta.listFiles();
         if (arquivos == null) return;
