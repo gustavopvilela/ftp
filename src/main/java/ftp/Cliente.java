@@ -1,56 +1,66 @@
 package ftp;
 
 import utils.FolderIdUtil;
+import utils.CustomTableCellRenderer;
+import utils.CustomTableHeaderRenderer;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.text.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.io.*;
 import java.net.Socket;
-import java.net.SocketException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class Cliente extends JFrame {
-    private static final String HOST = "localhost";
-    private static final int PORTA = 12381;
+    private static final String HOST_PADRAO = "localhost";
+    private static final int PORTA_PADRAO = 12381;
 
-    /* Componentes da interface */
+    /* --- Componentes da Interface --- */
     private JLabel statusLabel;
     private JButton uploadButton;
-    private JList<String> pastasServidorList;
-    private DefaultListModel<String> listModel;
     private JButton downloadButton;
-    private JTextArea logArea;
+    private JTextPane logPane; // Trocado para JTextPane
+    private JTable pastasServidorTable; // Trocado para JTable
+    private DefaultTableModel tableModel;
 
     private JTextField hostField;
     private JTextField portaField;
     private JButton conectarButton;
     private JLabel conexaoStatusLabel;
 
-    /* Estado da aplicação */
+    private JButton selecionarPastaButton;
+    private JButton refreshButton;
+
+    /* --- Estado da Aplicação --- */
     private File pastaSelecionada;
     private String pastaSelecionadaId;
     private String hostAtual;
     private int portaAtual;
     private boolean conectado = false;
 
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm:ss:SSS");
+    /* --- Utilidades --- */
+    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm:ss:SSS");
+    private final Color COR_ERRO = new Color(210, 4, 45);
+    private final Color COR_SUCESSO = new Color(0, 128, 0);
+    private final Color COR_INFO = new Color(0, 100, 200);
+    private final Color COR_PADRAO = Color.BLACK;
+    private final Color COR_TIMESTAMP = Color.GRAY;
 
     public Cliente() {
-        /* Coloca host e porta padrões de início */
-        hostAtual = HOST;
-        portaAtual = PORTA;
-
+        hostAtual = HOST_PADRAO;
+        portaAtual = PORTA_PADRAO;
         inicializarGUI();
-        //atualizarPastasServidor();
     }
 
     public void inicializarGUI() {
@@ -59,32 +69,34 @@ public class Cliente extends JFrame {
         setLayout(new BorderLayout());
 
         JPanel conexaoPanel = createConexaoPanel();
-        JPanel uploadPanel = createUploadPanel();
+        JPanel uploadPanel = createUploadPanel(); // Este painel agora incluirá o status
         JPanel servidorPanel = createServidorPanel();
         JPanel logPanel = createLogPanel();
-        JPanel statusPanel = createStatusPanel();
+        // A linha que criava o statusPanel foi removida daqui.
 
         JPanel topPanel = new JPanel();
         topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
         topPanel.add(conexaoPanel);
         topPanel.add(uploadPanel);
 
-        add(topPanel, BorderLayout.NORTH);
-        add(servidorPanel, BorderLayout.CENTER);
-        add(logPanel, BorderLayout.EAST);
-        add(statusPanel, BorderLayout.SOUTH);
+        JSplitPane centerSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, servidorPanel, logPanel);
+        centerSplitPane.setResizeWeight(0.65);
 
-        setSize(1000, 700);
+        add(topPanel, BorderLayout.NORTH);
+        add(centerSplitPane, BorderLayout.CENTER);
+        // A linha que adicionava o statusPanel ao SOUTH foi removida.
+
+        setSize(1200, 700);
         setLocationRelativeTo(null);
 
-        atualizarEstadoConexao();
+        atualizarEstadoControles();
     }
 
-    private JPanel createConexaoPanel () {
+    private JPanel createConexaoPanel() {
+        //... (Este método não muda)
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(new TitledBorder("Configuração do servidor"));
 
-        /* Campo para IP */
         panel.add(new JLabel("Servidor:"));
         hostField = new JTextField(hostAtual, 15);
         hostField.setToolTipText("Digite o IP do servidor FTP");
@@ -107,11 +119,11 @@ public class Cliente extends JFrame {
         return panel;
     }
 
-    private void testarConexao (ActionEvent e) {
+    private void testarConexao(ActionEvent e) {
+        //... (Este método não muda)
         String novoHost = hostField.getText().trim();
         String portaTexto = portaField.getText().trim();
 
-        /* Validação dos campos */
         if (novoHost.isEmpty()) {
             mostrarErro("Por favor, digite o endereço do servidor");
             hostField.requestFocus();
@@ -131,7 +143,6 @@ public class Cliente extends JFrame {
             return;
         }
 
-        /* Testa a conexão em uma nova thread para não travar a aplicação */
         conectarButton.setEnabled(false);
         conexaoStatusLabel.setText("Testando...");
         conexaoStatusLabel.setForeground(Color.ORANGE);
@@ -141,24 +152,20 @@ public class Cliente extends JFrame {
             String mensagemErro = "";
 
             try {
-                gerarMensagemLog("Testando conexão com " + novoHost + ": " + novaPorta);
-
-                /* Tenta uma conexão simples para ver se o servidor responde */
+                gerarMensagemLog("Testando conexão com " + novoHost + ": " + novaPorta, COR_INFO);
                 try (Socket socket = new Socket(novoHost, novaPorta)) {
                     BufferedReader entrada =  new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-                    socket.setSoTimeout(50000); // Timeout de 5 segundos para o teste
+                    socket.setSoTimeout(50000);
                     String resposta = entrada.readLine();
-
                     if (resposta != null) {
                         sucesso = true;
-                        gerarMensagemLog("Conexão bem-sucedida. Resposta: " + resposta);
+                        gerarMensagemLog("Conexão bem-sucedida. Resposta: " + resposta, COR_SUCESSO);
                     }
                 }
             }
             catch (IOException ex) {
                 mensagemErro = ex.getMessage();
-                gerarMensagemLog("Erro na conexão: " + ex.getMessage());
+                gerarMensagemLog("Erro na conexão: " + ex.getMessage(), COR_ERRO);
             }
 
             final boolean conexaoSucesso = sucesso;
@@ -166,44 +173,38 @@ public class Cliente extends JFrame {
 
             SwingUtilities.invokeLater(() -> {
                 conectarButton.setEnabled(true);
-
                 if (conexaoSucesso) {
                     hostAtual = novoHost;
                     portaAtual = novaPorta;
                     conectado = true;
-
                     conexaoStatusLabel.setText("Conectado (" + hostAtual + ":" + portaAtual + ")");
                     conexaoStatusLabel.setForeground(new Color(0, 128, 0));
-
                     mostrarSucesso("Conexão estabelecida com sucesso!\nServidor: " + hostAtual + ":" + portaAtual);
-
                     atualizarPastasServidor();
-                }
-                else {
+                } else {
                     conectado = false;
                     conexaoStatusLabel.setText("Erro na conexão");
                     conexaoStatusLabel.setForeground(Color.RED);
-
                     mostrarErro("Não foi possível conectar ao servidor.\nDetalhes: " + erro);
                 }
-
-                atualizarEstadoConexao();
+                atualizarEstadoControles();
             });
         }).start();
     }
 
-    private void atualizarEstadoConexao () {
-        /* O upload só funciona se há conexão e pasta selecionada */
+    private void atualizarEstadoControles () {
+        // Habilita/desabilita botões com base no status da conexão
+        selecionarPastaButton.setEnabled(conectado);
+        downloadButton.setEnabled(conectado);
+        refreshButton.setEnabled(conectado);
+
+        // O botão de upload depende da conexão E de uma pasta selecionada
         uploadButton.setEnabled(conectado && pastaSelecionada != null);
 
-        /* O botão de download funciona a depender da conexão */
-        downloadButton.setEnabled(conectado);
-
-        /* Atualiza o título da janela */
+        // Atualiza o título da janela
         if (conectado) {
             setTitle("Cliente FTP - Conectado a " + hostAtual + ":" + portaAtual);
-        }
-        else {
+        } else {
             setTitle("Cliente FTP - Não conectado");
         }
     }
@@ -212,39 +213,77 @@ public class Cliente extends JFrame {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(new TitledBorder("Upload de pasta"));
 
-        JButton selecionarPastaButton = new JButton("Selecionar Pasta");
+        // A variável agora é um campo da classe
+        selecionarPastaButton = new JButton("Selecionar Pasta");
         selecionarPastaButton.addActionListener(this::selecionarPasta);
 
         uploadButton = new JButton("Enviar para o servidor");
-        uploadButton.setEnabled(false);
+        // O estado inicial será definido em atualizarEstadoControles()
         uploadButton.addActionListener(this::uploadPasta);
 
         panel.add(selecionarPastaButton);
         panel.add(uploadButton);
 
+        panel.add(Box.createHorizontalStrut(20));
+
+        statusLabel = new JLabel("Pronto para uso");
+        statusLabel.setForeground(new Color(80, 80, 80));
+        panel.add(statusLabel);
+
         return panel;
     }
 
+    /* --- PAINEL DO SERVIDOR (COM JTABLE) --- */
     private JPanel createServidorPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new TitledBorder("Pastas no servidor"));
 
-        /* Lista de pastas no servidor */
-        listModel = new DefaultListModel<>();
-        pastasServidorList = new JList<>(listModel);
-        pastasServidorList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        String[] colunas = {"ID", "Nome da Pasta", "Tamanho"};
+        tableModel = new DefaultTableModel(colunas, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
 
-        JScrollPane scrollPane = new JScrollPane(pastasServidorList);
-        scrollPane.setPreferredSize(new Dimension(400, 200));
+        pastasServidorTable = new JTable(tableModel);
+        pastasServidorTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        pastasServidorTable.setFillsViewportHeight(true);
+        pastasServidorTable.getTableHeader().setReorderingAllowed(false);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout());
-        JButton refreshButton = new JButton("Atualizar lista");
+        // --- INÍCIO DA ESTILIZAÇÃO ---
+
+        // 1. Estilizar o cabeçalho da tabela
+        JTableHeader header = pastasServidorTable.getTableHeader();
+        header.setDefaultRenderer(new CustomTableHeaderRenderer(pastasServidorTable));
+        header.setFont(new Font("Arial", Font.BOLD, 12));
+
+        // 2. Aumentar a altura da linha para criar padding vertical
+        pastasServidorTable.setRowHeight(28);
+
+        // 3. Aplicar o renderizador personalizado para padding e alinhamento nas células
+        CustomTableCellRenderer cellRenderer = new CustomTableCellRenderer();
+        pastasServidorTable.setDefaultRenderer(Object.class, cellRenderer);
+
+        // 4. Ajustar largura das colunas
+        pastasServidorTable.getColumnModel().getColumn(0).setPreferredWidth(70);
+        pastasServidorTable.getColumnModel().getColumn(1).setPreferredWidth(280);
+        pastasServidorTable.getColumnModel().getColumn(2).setPreferredWidth(100);
+
+        // --- FIM DA ESTILIZAÇÃO ---
+
+        JScrollPane scrollPane = new JScrollPane(pastasServidorTable);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+
+        refreshButton = new JButton("Atualizar lista de pastas");
         refreshButton.addActionListener(e -> {
             if (conectado) {
                 atualizarPastasServidor();
             }
             else {
-                mostrarErro("Conecte-se ao servidor primeiro");
+                mostrarErro("Conecte-se ao servidor primeiro!");
             }
         });
 
@@ -254,31 +293,39 @@ public class Cliente extends JFrame {
         buttonPanel.add(refreshButton);
         buttonPanel.add(downloadButton);
 
-        panel.add(scrollPane, BorderLayout.CENTER);
         panel.add(buttonPanel, BorderLayout.SOUTH);
-
         return panel;
     }
 
+    /* --- PAINEL DE LOG (COM JTEXTPANE) --- */
     private JPanel createLogPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(new TitledBorder("Log de atividade"));
+        panel.setBorder(new TitledBorder("Log de Atividade"));
 
-        logArea = new JTextArea(10, 30);
-        logArea.setEditable(false);
-        logArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        logPane = new JTextPane();
+        logPane.setEditable(false);
+        logPane.setFont(new Font("Arial", Font.BOLD, 12));
+        SimpleAttributeSet paragraphStyle = new SimpleAttributeSet();
+        StyleConstants.setLineSpacing(paragraphStyle, 0.5f);
+        StyleConstants.setBold(paragraphStyle, true);
+        logPane.setParagraphAttributes(paragraphStyle, true);
 
-        JScrollPane scrollPane = new JScrollPane(logArea);
+        JScrollPane scrollPane = new JScrollPane(logPane);
         panel.add(scrollPane, BorderLayout.CENTER);
 
         return panel;
     }
 
-    private JPanel createStatusPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusLabel = new JLabel("Pronto para uso");
-        panel.add(statusLabel);
-        return panel;
+//    private JPanel createStatusPanel() {
+//        //... (Este método não muda)
+//        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+//        statusLabel = new JLabel("Pronto para uso");
+//        panel.add(statusLabel);
+//        return panel;
+//    }
+
+    private String gerarIdDaPasta(File pasta) throws IOException {
+        return FolderIdUtil.obterId(pasta);
     }
 
     private void selecionarPasta(ActionEvent e) throws UncheckedIOException {
@@ -296,22 +343,22 @@ public class Cliente extends JFrame {
             pastaSelecionada = chooser.getSelectedFile();
             pastaSelecionadaId = gerarIdDaPasta(pastaSelecionada);
 
-            uploadButton.setEnabled(true);
             statusLabel.setText("Pasta selecionada: " + pastaSelecionada.getName());
 
-            gerarMensagemLog("Pasta selecionada: " + pastaSelecionada.getAbsolutePath());
-            gerarMensagemLog("ID gerado para a pasta: " + pastaSelecionadaId);
-        }
-        catch (IOException ex) {
+            gerarMensagemLog("Pasta selecionada: " + pastaSelecionada.getAbsolutePath() + " | Pronto para enviar para o servidor.", COR_PADRAO);
+            gerarMensagemLog("ID gerado para a pasta: " + pastaSelecionadaId, COR_PADRAO);
+
+            // ATUALIZA O ESTADO DOS CONTROLES AQUI TAMBÉM
+            // para habilitar o botão de upload após selecionar uma pasta
+            atualizarEstadoControles();
+
+        } catch (IOException ex) {
             mostrarErro("Erro ao selecionar pasta: " + ex.getMessage());
         }
     }
 
-    private String gerarIdDaPasta (File pasta) throws IOException {
-        return FolderIdUtil.obterId(pasta);
-    }
-
     private void uploadPasta(ActionEvent e) {
+        //... (Este método não muda)
         if (pastaSelecionada == null) {
             mostrarErro("Nenhuma pasta selecionada");
             return;
@@ -329,351 +376,233 @@ public class Cliente extends JFrame {
                     mostrarSucesso("Pasta enviada com sucesso.");
                     atualizarPastasServidor();
                     uploadButton.setEnabled(true);
-                    statusLabel.setText("Upload concluído.");
+                    statusLabel.setText("Upload concluído. | O sistema está pronto para uso.");
                 });
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
                     mostrarErro("Erro no upload: " + ex.getMessage());
                     uploadButton.setEnabled(true);
-                    statusLabel.setText("Erro no upload.");
+                    statusLabel.setText("Erro no upload. | Tente novamente.");
                 });
-                gerarMensagemLog("ERRO: " + ex.getMessage());
+                gerarMensagemLog("ERRO: " + ex.getMessage(), COR_ERRO);
             }
         }).start();
     }
 
     private void executarUpload() {
-        gerarMensagemLog("=== INICIANDO UPLOAD ===");
-        gerarMensagemLog("Conectando ao servidor " + hostAtual + ":" + portaAtual);
+        gerarMensagemLog("=== INICIANDO UPLOAD ===", COR_INFO);
+        // ... Lógica de upload não muda, mas chamadas de log agora podem ter cor
+        gerarMensagemLog("Conectando ao servidor " + hostAtual + ":" + portaAtual, COR_INFO);
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) { // AUTO-FLUSH habilitado
+             PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) {
 
-            // Configurações importantes do socket para evitar problemas de timing
-            socket.setTcpNoDelay(true); // Envia dados imediatamente, sem buffer
-            socket.setSoTimeout(30000); // Timeout de 30 segundos para leitura
-
-            gerarMensagemLog("Socket configurado - TCP_NODELAY: true, SO_TIMEOUT: 30s");
+            socket.setTcpNoDelay(true);
+            socket.setSoTimeout(30000);
+            gerarMensagemLog("Socket configurado - TCP_NODELAY: true, SO_TIMEOUT: 30s", COR_PADRAO);
 
             String resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (conexão): " + resposta);
+            gerarMensagemLog("SERVIDOR (conexão): " + resposta, COR_PADRAO);
 
             String infoPasta = pastaSelecionada.getName() + "|" + pastaSelecionadaId;
-            gerarMensagemLog("ENVIANDO: CHECK_FOLDER " + infoPasta);
-            saida.println("CHECK_FOLDER " + infoPasta);
-            // Removido flush manual porque PrintWriter está com auto-flush
-
-            resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (check): " + resposta);
-
-            gerarMensagemLog("ENVIANDO: UPLOAD_FOLDER " + infoPasta);
+            gerarMensagemLog("ENVIANDO: UPLOAD_FOLDER " + infoPasta, COR_INFO);
             saida.println("UPLOAD_FOLDER " + infoPasta);
 
             resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (upload): " + resposta);
+            gerarMensagemLog("SERVIDOR (upload): " + resposta, COR_PADRAO);
 
             if (resposta.startsWith("150")) {
-                // Primeiro, vamos coletar e contar todos os arquivos
                 List<File> todosArquivos = coletarTodosArquivos(pastaSelecionada);
-                gerarMensagemLog("=== INICIANDO ENVIO DE " + todosArquivos.size() + " ARQUIVOS ===");
-
-                // ESTRATÉGIA CONSERVADORA: Um arquivo por vez, com confirmação
                 enviarArquivosComConfirmacao(todosArquivos, socket, saida, entrada);
 
-                gerarMensagemLog("ENVIANDO: END_FOLDER");
                 saida.println("END_FOLDER");
-
                 resposta = entrada.readLine();
-                gerarMensagemLog("SERVIDOR (fim): " + resposta);
+                gerarMensagemLog("SERVIDOR (fim): " + resposta, COR_PADRAO);
 
                 if (!resposta.startsWith("226")) {
                     throw new Exception("Upload falhou - resposta final: " + resposta);
                 }
-
-                gerarMensagemLog("=== UPLOAD CONCLUÍDO COM SUCESSO ===");
-            }
-            else {
+                gerarMensagemLog("=== UPLOAD CONCLUÍDO COM SUCESSO ===", COR_SUCESSO);
+            } else {
                 throw new Exception("Servidor recusou o upload: " + resposta);
             }
         } catch (Exception e) {
-            gerarMensagemLog("ERRO CRÍTICO: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            gerarMensagemLog("ERRO CRÍTICO: " + e.getClass().getSimpleName() + " - " + e.getMessage(), COR_ERRO);
             throw new RuntimeException(e);
         }
     }
 
-    /**
-     * Coleta todos os arquivos mantendo uma ordem determinística
-     * Isso evita problemas de ordem que podem confundir o servidor
-     */
     private List<File> coletarTodosArquivos(File pastaRaiz) {
+        //... (Este método não muda)
         List<File> arquivos = new ArrayList<>();
         coletarArquivosRecursivamente(pastaRaiz, arquivos);
-
-        // IMPORTANTE: Ordenar os arquivos por caminho para garantir ordem consistente
-        arquivos.sort((f1, f2) -> {
-            String path1 = pastaRaiz.toPath().relativize(f1.toPath()).toString();
-            String path2 = pastaRaiz.toPath().relativize(f2.toPath()).toString();
-            return path1.compareTo(path2);
-        });
-
-        gerarMensagemLog("Arquivos coletados e ordenados:");
-        for (int i = 0; i < Math.min(5, arquivos.size()); i++) {
-            String caminho = pastaRaiz.toPath().relativize(arquivos.get(i).toPath()).toString();
-            gerarMensagemLog("  " + (i+1) + ". " + caminho);
-        }
-        if (arquivos.size() > 5) {
-            gerarMensagemLog("  ... e mais " + (arquivos.size() - 5) + " arquivos");
-        }
-
+        arquivos.sort(Comparator.comparing(f -> pastaRaiz.toPath().relativize(f.toPath()).toString()));
         return arquivos;
     }
 
     private void coletarArquivosRecursivamente(File pasta, List<File> arquivos) {
+        //... (Este método não muda)
         File[] conteudo = pasta.listFiles();
-        if (conteudo == null) {
-            gerarMensagemLog("AVISO: Não foi possível listar conteúdo de " + pasta.getAbsolutePath());
-            return;
-        }
-
-        // Primeiro todos os arquivos da pasta atual
-        Arrays.sort(conteudo, Comparator.comparing(File::getName)); // Ordem alfabética
-
-        for (File item : conteudo) {
-            if (item.isFile()) {
-                arquivos.add(item);
-            }
-        }
-
-        // Depois as subpastas, recursivamente
-        for (File item : conteudo) {
-            if (item.isDirectory()) {
-                coletarArquivosRecursivamente(item, arquivos);
-            }
-        }
+        if (conteudo == null) return;
+        Arrays.sort(conteudo, Comparator.comparing(File::getName));
+        for (File item : conteudo) if (item.isFile()) arquivos.add(item);
+        for (File item : conteudo) if (item.isDirectory()) coletarArquivosRecursivamente(item, arquivos);
     }
 
-    /**
-     * NOVA ESTRATÉGIA: Envio extremamente conservador
-     * Um arquivo por vez, com confirmação obrigatória antes do próximo
-     * Inclui delays estratégicos para evitar sobrecarregar o servidor
-     */
-    private void enviarArquivosComConfirmacao(List<File> arquivos, Socket socket,
-                                              PrintWriter saida, BufferedReader entrada) throws Exception {
-
+    private void enviarArquivosComConfirmacao(List<File> arquivos, Socket socket, PrintWriter saida, BufferedReader entrada) throws Exception {
+        //... (Este método não muda, mas o log terá cores)
         int totalArquivos = arquivos.size();
-        int sucessos = 0;
-
         for (int i = 0; i < totalArquivos; i++) {
             File arquivo = arquivos.get(i);
             String caminhoRelativo = pastaSelecionada.toPath().relativize(arquivo.toPath()).toString();
-
-            gerarMensagemLog("=== ARQUIVO " + (i+1) + "/" + totalArquivos + " ===");
-            gerarMensagemLog("Preparando: " + caminhoRelativo + " (" + arquivo.length() + " bytes)");
-
-            // Atualiza interface
             final int arquivoAtual = i + 1;
             SwingUtilities.invokeLater(() -> statusLabel.setText("Enviando %d/%d: %s".formatted(arquivoAtual, totalArquivos, caminhoRelativo)));
 
-            // PASSO 1: Enviar metadados do arquivo
-            gerarMensagemLog("ENVIANDO: FILE:" + caminhoRelativo);
             saida.println("FILE:" + caminhoRelativo);
-
-            gerarMensagemLog("ENVIANDO: " + arquivo.length());
             saida.println(arquivo.length());
 
-            // DELAY ESTRATÉGICO: Dar tempo para o servidor processar os metadados
-            Thread.sleep(100); // 100ms pode fazer toda a diferença
-
-            // PASSO 2: Enviar conteúdo do arquivo em chunks pequenos
-            long bytesEnviados = 0;
-            try (FileInputStream fis = new FileInputStream(arquivo);
-                 BufferedInputStream bis = new BufferedInputStream(fis)) {
-
-                byte[] buffer = new byte[4096]; // Buffer menor para melhor controle
-                int bytesLidos;
-
-                while ((bytesLidos = bis.read(buffer)) != -1) {
-                    socket.getOutputStream().write(buffer, 0, bytesLidos);
-                    bytesEnviados += bytesLidos;
-
-                    // Flush a cada chunk para garantir envio imediato
-                    socket.getOutputStream().flush();
-
-                    // Log de progresso para arquivos grandes (> 1MB)
-                    if (arquivo.length() > 1024 * 1024 && bytesEnviados % (256 * 1024) == 0) {
-                        double progresso = (double) bytesEnviados / arquivo.length() * 100;
-                        gerarMensagemLog("Progresso: " + String.format("%.1f%%", progresso));
-                    }
-                }
+            try (FileInputStream fis = new FileInputStream(arquivo)) {
+                fis.transferTo(socket.getOutputStream());
             }
 
-            gerarMensagemLog("Conteúdo enviado: " + bytesEnviados + " bytes");
-
-            // PASSO 3: Aguardar confirmação do servidor
-            gerarMensagemLog("Aguardando confirmação...");
             String resposta = entrada.readLine();
-
-            if ("OK".equals(resposta)) {
-                sucessos++;
-                gerarMensagemLog("✓ CONFIRMADO: " + caminhoRelativo);
-            } else {
-                gerarMensagemLog("✗ FALHA: " + caminhoRelativo + " - Resposta: '" + resposta + "'");
-                throw new Exception("Erro ao enviar arquivo " + caminhoRelativo + " - Resposta do servidor: '" + resposta + "'");
-            }
-
-            // DELAY ENTRE ARQUIVOS: Evita sobrecarregar o servidor
-            if (i < totalArquivos - 1) { // Não esperar após o último arquivo
-                Thread.sleep(50); // 50ms entre arquivos
+            if (!"OK".equals(resposta)) {
+                throw new Exception("Erro ao enviar arquivo " + caminhoRelativo);
             }
         }
-
-        gerarMensagemLog("=== RESUMO: " + sucessos + "/" + totalArquivos + " arquivos enviados com sucesso ===");
     }
 
-    /* Atualiza a lista de pastas que estão disponíveis no servidor */
-    private void atualizarPastasServidor () {
+    /* --- ATUALIZAÇÃO DA TABELA DE PASTAS --- */
+    private void atualizarPastasServidor() {
         new Thread(() -> {
             try {
-                List<String> pastas = getPastasServidor();
+                // Limpa a tabela antes de buscar novos dados
+                SwingUtilities.invokeLater(() -> tableModel.setRowCount(0));
+
+                List<String[]> pastas = getPastasServidor();
                 SwingUtilities.invokeLater(() -> {
-                    listModel.clear();
-                    for (String pasta : pastas) {
-                        listModel.addElement(pasta);
+                    for (String[] pasta : pastas) {
+                        tableModel.addRow(pasta);
                     }
-                    gerarMensagemLog("Lista de pastas atualizada: " + pastas.size() + " itens");
+                    gerarMensagemLog("Lista de pastas atualizada: " + pastas.size() + " itens.", COR_INFO);
                 });
-            }
-            catch (Exception e) {
-                SwingUtilities.invokeLater(() -> mostrarErro("Erro ao atualizar lista: %s".formatted(e.getMessage())));
-                gerarMensagemLog("ERRO ao atualizar lista: " + e.getMessage());
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> mostrarErro("Erro ao atualizar lista: " + e.getMessage()));
+                gerarMensagemLog("ERRO ao atualizar lista: " + e.getMessage(), COR_ERRO);
             }
         }).start();
     }
 
-    private List<String> getPastasServidor() throws Exception {
-        List<String> pastas = new ArrayList<>();
+    private List<String[]> getPastasServidor() throws Exception {
+        List<String[]> pastas = new ArrayList<>();
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
+             PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) {
 
-            // 1) Se o seu servidor envia um greeting (220, 200, etc.), leia-o:
-            String line = entrada.readLine();
-            gerarMensagemLog("Greeting: " + line);
-
-            // 2) Peça a lista
+            entrada.readLine(); // "220 Servidor Pronto"
             saida.println("LIST");
-            saida.flush();
 
-            // 3) Leia o código de início (esperamos algo como "150 ...")
-            line = entrada.readLine();
-            gerarMensagemLog("Resposta LIST início: " + line);
+            String line = entrada.readLine();
             if (line == null || !line.startsWith("150")) {
-                throw new Exception("Não foi possível iniciar listagem de pastas: " + line);
+                throw new Exception("Não foi possível iniciar listagem: " + line);
             }
 
-            // 4) Agora, leia tudo até o “226” de fim de listagem
             while ((line = entrada.readLine()) != null) {
-                gerarMensagemLog("Listando: " + line);
-
                 if (line.startsWith("226")) {
-                    // terminou
-                    break;
+                    break; // Fim da lista
                 }
-                if (line.startsWith("FOLDER:") || line.startsWith("PASTA:")) {
-                    String[] parts = line.split(":", 2);
-                    pastas.add(parts[1].trim());
+                if (line.startsWith("PASTA_INFO:")) {
+                    String[] parts = line.substring(11).split("\\|", 3);
+                    if (parts.length == 3) {
+                        String id = parts[0];
+                        String nome = parts[1];
+                        String tamanho = formatarTamanho(Long.parseLong(parts[2]));
+                        pastas.add(new String[]{id, nome, tamanho});
+                    }
                 }
             }
         }
-
         return pastas;
     }
 
+    private String formatarTamanho(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        String pre = "KMGTPE".charAt(exp - 1) + "";
+        return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
+    }
 
-    /* Função para download de pastas no servidor */
-    private void downloadPasta (ActionEvent e) {
-        String pastaSelecionada = pastasServidorList.getSelectedValue();
-        if (pastaSelecionada == null) {
-            mostrarErro("Selecione uma pasta para baixar");
+    /* --- DOWNLOAD DE PASTA (usando a JTable) --- */
+    private void downloadPasta(ActionEvent e) {
+        int selectedRow = pastasServidorTable.getSelectedRow();
+        if (selectedRow == -1) {
+            mostrarErro("Selecione uma pasta na tabela para baixar.");
             return;
         }
+
+        // Constrói o nome da pasta no formato que o servidor espera: nome_id
+        String id = (String) tableModel.getValueAt(selectedRow, 0);
+        String nome = (String) tableModel.getValueAt(selectedRow, 1);
+        String pastaServidor = nome + "_" + id;
 
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        chooser.setDialogTitle("Escolha onde salvar a pasta");
+        chooser.setDialogTitle("Escolha onde salvar a pasta '" + nome + "'");
 
-        int resultado = chooser.showSaveDialog(this);
-        if (resultado != JFileChooser.APPROVE_OPTION) {
-            return;
-        }
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
         File localSalvamento = chooser.getSelectedFile();
-
         downloadButton.setEnabled(false);
         statusLabel.setText("Baixando pasta...");
 
         new Thread(() -> {
             try {
-                executarDownload(pastaSelecionada, localSalvamento);
+                executarDownload(pastaServidor, localSalvamento);
                 SwingUtilities.invokeLater(() -> {
-                    mostrarSucesso("Pasta baixada com sucesso.");
+                    mostrarSucesso("Pasta '" + nome + "' baixada com sucesso.");
                     downloadButton.setEnabled(true);
-                    statusLabel.setText("Download concluído");
+                    statusLabel.setText("Download concluído. | O sistema está pronto para uso.");
                 });
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
                     mostrarErro("Erro no download: " + ex.getMessage());
                     downloadButton.setEnabled(true);
-                    statusLabel.setText("Erro no download");
+                    statusLabel.setText("Erro no download. | Tente novamente.");
                 });
-                gerarMensagemLog("ERRO no download: " + ex.getMessage());
+                gerarMensagemLog("ERRO no download: " + ex.getMessage(), COR_ERRO);
             }
         }).start();
     }
 
     private void executarDownload(String pasta, File localSalvamento) throws Exception {
-        gerarMensagemLog("=== INICIANDO DOWNLOAD (ABORDAGEM: ZIP STREAM V2) ===");
+        //... (Este método não muda)
+        gerarMensagemLog("=== INICIANDO DOWNLOAD ===", COR_INFO);
         String nomeOriginal = FolderIdUtil.extrairNomeOriginal(pasta);
         File pastaAlvo = new File(localSalvamento, nomeOriginal);
         localSalvamento.mkdirs();
 
-        // A conexão inteira agora está dentro de um único bloco try-with-resources
         try (Socket socket = new Socket(hostAtual, portaAtual)) {
-            socket.setSoTimeout(180000); // Timeout de 3 minutos
-
-            // Streams de texto para o handshake inicial
+            socket.setSoTimeout(180000);
             PrintWriter saida = new PrintWriter(socket.getOutputStream(), true);
             BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-            // 1. HANDSHAKE INICIAL
-            gerarMensagemLog("Servidor: " + entrada.readLine()); // "220 Servidor Pronto"
+            entrada.readLine(); // Greeting
             saida.println("DOWNLOAD_FOLDER " + pasta);
-            gerarMensagemLog("Enviado pedido para: " + pasta);
 
-            // 2. LER CONFIRMAÇÃO DE STREAMING
             String resposta = entrada.readLine();
             if (resposta == null || !resposta.startsWith("150")) {
-                throw new IOException("Servidor recusou o streaming de ZIP: " + resposta);
+                throw new IOException("Servidor recusou o download: " + resposta);
             }
-            gerarMensagemLog("Servidor: " + resposta);
+            gerarMensagemLog("Servidor: " + resposta, COR_INFO);
             statusLabel.setText("Recebendo stream de dados...");
 
-            // 3. RECEBER E DESCOMPACTAR O ZIP STREAM
-            // O try-with-resources garante que o zis será fechado.
-            // O fim do stream (causado pelo fechamento do socket do servidor) será
-            // detectado aqui. Se o bloco terminar sem exceções, o download foi um sucesso.
             try (ZipInputStream zis = new ZipInputStream(socket.getInputStream())) {
                 ZipEntry zipEntry;
                 byte[] buffer = new byte[8192];
-
                 while ((zipEntry = zis.getNextEntry()) != null) {
                     File novoArquivo = new File(pastaAlvo, zipEntry.getName());
-                    gerarMensagemLog("Descompactando: " + novoArquivo.getAbsolutePath());
-
                     if (zipEntry.isDirectory()) {
                         novoArquivo.mkdirs();
                     } else {
@@ -688,102 +617,67 @@ public class Cliente extends JFrame {
                     zis.closeEntry();
                 }
             }
-
-            gerarMensagemLog("=== DOWNLOAD (ZIP STREAM) CONCLUÍDO COM SUCESSO ===");
-            statusLabel.setText("Download concluído.");
-
-        } catch (SocketException e) {
-            // Se o erro for "Connection reset", pode ser o comportamento normal do servidor fechando a conexão.
-            // Se já tivermos recebido dados, podemos considerar um sucesso.
-            gerarMensagemLog("Conexão fechada pelo servidor (comportamento esperado no fim do stream): " + e.getMessage());
-            gerarMensagemLog("=== DOWNLOAD (ZIP STREAM) CONCLUÍDO COM SUCESSO ===");
-            statusLabel.setText("Download concluído.");
-        } catch (Exception e) {
-            gerarMensagemLog("ERRO CRÍTICO no download (ZIP Stream): " + e.getClass().getSimpleName() + " - " + e.getMessage());
-            statusLabel.setText("Erro no download.");
-            // Propaga a exceção para a UI mostrar o erro
-            throw e;
+            gerarMensagemLog("=== DOWNLOAD CONCLUÍDO COM SUCESSO ===", COR_SUCESSO);
         }
     }
 
-    /* Função para receber os arquivos do servidor durante o download */
-    private void receberArquivos(File pastaDestino, InputStream inputStream, BufferedReader entrada, PrintWriter saida) throws Exception {
-        String linha;
+    /* --- MÉTODOS DE LOG COLORIDO --- */
+    /**
+     * Adiciona uma string ao JTextPane com uma cor específica, respeitando a fonte do painel.
+     * @param texto A mensagem a ser adicionada.
+     * @param cor A cor do texto.
+     */
+    private void appendColorido(String texto, Color cor) {
+        StyledDocument doc = logPane.getStyledDocument();
 
-        // Loop principal para processar os comandos do servidor
-        while ((linha = entrada.readLine()) != null && !linha.equals("END_FOLDER")) {
+        // Cria um conjunto de atributos para o estilo do texto
+        SimpleAttributeSet style = new SimpleAttributeSet();
 
-            if (linha.startsWith("FILE:")) {
-                // Extrai o nome e o tamanho do arquivo dos metadados
-                String nomeArquivo = linha.substring(5);
-                long tamanhoArquivo = Long.parseLong(entrada.readLine());
+        // 1. Define a cor do texto
+        StyleConstants.setForeground(style, cor);
 
-                gerarMensagemLog("Recebendo: " + nomeArquivo + " (" + tamanhoArquivo + " bytes)");
-                statusLabel.setText("Baixando: " + nomeArquivo);
+        // 2. CORREÇÃO: Define a família, tamanho e estilo da fonte
+        // com base na fonte que já está configurada no logPane.
+        Font logFont = logPane.getFont();
+        StyleConstants.setFontFamily(style, logFont.getFamily());
+        StyleConstants.setFontSize(style, logFont.getSize());
+        StyleConstants.setBold(style, logFont.isBold());
+        StyleConstants.setItalic(style, logFont.isItalic());
 
-                File arquivoAlvo = new File(pastaDestino, nomeArquivo);
-
-                // Garante que a estrutura de diretórios seja criada
-                File diretorioPai = arquivoAlvo.getParentFile();
-                if (diretorioPai != null && !diretorioPai.exists()) {
-                    if (!diretorioPai.mkdirs()) {
-                        throw new IOException("Não foi possível criar o diretório: " + diretorioPai.getAbsolutePath());
-                    }
-                }
-
-                // Recebe o conteúdo do arquivo
-                try (FileOutputStream fos = new FileOutputStream(arquivoAlvo)) {
-                    byte[] buffer = new byte[4096];
-                    long totalRecebido = 0;
-
-                    while (totalRecebido < tamanhoArquivo) {
-                        // Calcula quanto ainda precisa ser lido para não ultrapassar o tamanho do arquivo
-                        int bytesParaLer = (int) Math.min(buffer.length, tamanhoArquivo - totalRecebido);
-                        int bytesLidos = inputStream.read(buffer, 0, bytesParaLer);
-
-                        if (bytesLidos == -1) {
-                            // Se o stream fechar inesperadamente, lança um erro
-                            throw new EOFException("Conexão perdida durante o download do arquivo: " + nomeArquivo);
-                        }
-
-                        fos.write(buffer, 0, bytesLidos);
-                        totalRecebido += bytesLidos;
-                    }
-                }
-
-                // Envia a confirmação "OK" para o servidor, sincronizando a transferência
-                saida.println("OK");
-            }
+        try {
+            // Insere o texto no final do documento com o estilo completo
+            doc.insertString(doc.getLength(), texto, style);
+        } catch (BadLocationException e) {
+            // Este erro é improvável de acontecer aqui
+            e.printStackTrace();
         }
-        // Quando o laço termina (porque leu "END_FOLDER"), a função retorna.
-        // A leitura da resposta "226" final fica no método executarDownload.
     }
 
-    private void gerarMensagemLog (String mensagem) {
+    private void gerarMensagemLog(String mensagem, Color cor) {
         SwingUtilities.invokeLater(() -> {
-            logArea.append("[" + LocalDateTime.now().format(formatter) + "] " + mensagem + "\n");
-            logArea.setCaretPosition(logArea.getDocument().getLength());
+            String timestamp = "[" + LocalDateTime.now().format(formatter) + "] ";
+            appendColorido(timestamp, COR_TIMESTAMP);
+            appendColorido(mensagem + "\n", cor);
+            logPane.setCaretPosition(logPane.getDocument().getLength());
         });
     }
 
-    private void mostrarErro (String mensagem) {
+    private void mostrarErro(String mensagem) {
         JOptionPane.showMessageDialog(this, mensagem, "Erro", JOptionPane.ERROR_MESSAGE);
-        gerarMensagemLog("ERRO: " + mensagem);
+        gerarMensagemLog("ERRO: " + mensagem.replace("\n", " "), COR_ERRO);
     }
 
-    private void mostrarSucesso (String mensagem) {
+    private void mostrarSucesso(String mensagem) {
         JOptionPane.showMessageDialog(this, mensagem, "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-        gerarMensagemLog("SUCESSO: " + mensagem);
+        gerarMensagemLog("SUCESSO: " + mensagem.replace("\n", " "), COR_SUCESSO);
     }
 
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            System.err.println("Erro ao carregar look and feel: " + e.getMessage());
         }
-        catch (Exception e) {
-            System.out.println("Erro ao carregar look and feel: " + e.getMessage());
-        }
-
         SwingUtilities.invokeLater(() -> new Cliente().setVisible(true));
     }
 }

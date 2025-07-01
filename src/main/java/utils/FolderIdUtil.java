@@ -37,14 +37,12 @@ public class FolderIdUtil {
             if (fileKey != null) {
                 // Usa o hash do fileKey, que é a forma mais robusta e portável.
                 id = Integer.toString(Math.abs(fileKey.hashCode()));
-                gerarMensagemLog("ID gerado via fileKey: " + id + " para a pasta " + pasta.getName());
             } else {
                 // 2. Se fileKey não for suportado, usa o método de fallback.
                 id = gerarIdPorFallback(pasta);
             }
         } catch (Exception e) {
             // 3. Em caso de qualquer erro, usa o método de fallback como segurança.
-            gerarMensagemLog("Erro ao obter fileKey: " + e.getMessage() + ". Usando método de fallback.");
             id = gerarIdPorFallback(pasta);
         }
 
@@ -69,15 +67,10 @@ public class FolderIdUtil {
             // Combina os atributos em uma única String para gerar o hash.
             String baseParaHash = caminhoAbsoluto + ultimaModificacao + tamanho;
             int hash = baseParaHash.hashCode();
-            String id = String.valueOf(Math.abs(hash));
-
-            gerarMensagemLog("ID de fallback gerado: " + id + " para a pasta " + pasta.getName());
-            return id;
+            return String.valueOf(Math.abs(hash));
         } catch (Exception e) {
             // Como último recurso absoluto, usa o tempo atual para garantir um valor único.
-            String id = String.valueOf(System.currentTimeMillis());
-            gerarMensagemLog("ERRO no fallback. Usando ID de emergência (timestamp): " + id);
-            return id;
+            return String.valueOf(System.currentTimeMillis());
         }
     }
 
@@ -89,17 +82,40 @@ public class FolderIdUtil {
     public static String extrairNomeOriginal(String nomeComId) {
         int ultimoUnderline = nomeComId.lastIndexOf('_');
         if (ultimoUnderline > 0) {
-            return nomeComId.substring(0, ultimoUnderline);
+            // Verifica se o que vem depois do underline é numérico (para ser um ID)
+            String supostoId = nomeComId.substring(ultimoUnderline + 1);
+            if (supostoId.matches("\\d+")) {
+                return nomeComId.substring(0, ultimoUnderline);
+            }
         }
-        return nomeComId;
+        return nomeComId; // Retorna o nome completo se não encontrar um ID no formato esperado
     }
 
     /**
+     * Extrai o ID da pasta a partir de um nome combinado (nome_id).
+     * @param nomeComId O nome da pasta no formato "nomeOriginal_id".
+     * @return Apenas o ID da pasta, ou uma string vazia se não for encontrado.
+     */
+    public static String extrairId(String nomeComId) {
+        int ultimoUnderline = nomeComId.lastIndexOf('_');
+        if (ultimoUnderline > 0) {
+            String supostoId = nomeComId.substring(ultimoUnderline + 1);
+            // Garante que estamos extraindo algo que parece um ID
+            if (supostoId.matches("\\d+")) {
+                return supostoId;
+            }
+        }
+        return ""; // Retorna vazio se não encontrar
+    }
+
+
+    /**
      * Calcula o tamanho total de uma pasta somando o tamanho de todos os arquivos internos, recursivamente.
+     * Este método agora é PÚBLICO para ser usado pelo ClienteHandler.
      * @param pasta O diretório a ser medido.
      * @return O tamanho total da pasta em bytes.
      */
-    private static long calcularTamanhoPasta(File pasta) {
+    public static long calcularTamanhoPasta(File pasta) { // <-- ALTERADO PARA PUBLIC
         long tamanho = 0;
         File[] arquivos = pasta.listFiles();
         if (arquivos != null) {
@@ -112,10 +128,5 @@ public class FolderIdUtil {
             }
         }
         return tamanho;
-    }
-
-    private static void gerarMensagemLog(String msg) {
-        // A sua implementação de log pode ser usada aqui.
-        System.out.println("[FolderIdUtil] " + msg);
     }
 }
