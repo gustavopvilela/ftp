@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipEntry;
 
 public class Cliente extends JFrame {
     private static final String HOST = "localhost";
@@ -633,56 +635,69 @@ public class Cliente extends JFrame {
     }
 
     private void executarDownload(String pasta, File localSalvamento) throws Exception {
-        gerarMensagemLog("=== INICIANDO DOWNLOAD DA PASTA: " + pasta + " ===");
-
-        // Extrai o nome original da pasta para criar o diretório de destino
+        gerarMensagemLog("=== INICIANDO DOWNLOAD (ABORDAGEM: ZIP STREAM) ===");
         String nomeOriginal = FolderIdUtil.extrairNomeOriginal(pasta);
         File pastaAlvo = new File(localSalvamento, nomeOriginal);
 
-        // Garante que o diretório de destino exista
-        if (!pastaAlvo.exists() && !pastaAlvo.mkdirs()) {
-            throw new IOException("Não foi possível criar o diretório de destino: " + pastaAlvo.getAbsolutePath());
-        }
+        // O diretório alvo não deve existir ainda, pois o ZipInputStream irá criá-lo.
+        // Apenas o pai precisa existir.
+        localSalvamento.mkdirs();
+
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
-             // Usar BufferedReader para ler linhas de texto e o InputStream para dados binários
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) {
 
-            socket.setSoTimeout(30000); // Timeout de 30 segundos
+            socket.setSoTimeout(180000); // Timeout maior para downloads grandes
 
-            // 1. Ler a mensagem de boas-vindas do servidor
-            String resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (conexão): " + resposta);
-
-            // 2. Enviar o comando para iniciar o download
-            gerarMensagemLog("ENVIANDO: DOWNLOAD_FOLDER " + pasta);
+            // 1. LER MENSAGEM DE BOAS-VINDAS E SOLICITAR DOWNLOAD
+            gerarMensagemLog("Servidor: " + entrada.readLine());
             saida.println("DOWNLOAD_FOLDER " + pasta);
 
-            // 3. Ler a resposta do servidor para o comando de download
-            resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (download): " + resposta);
+            // 2. LER CONFIRMAÇÃO DE STREAMING
+            String resposta = entrada.readLine();
+            if (!resposta.startsWith("150")) {
+                throw new IOException("Servidor recusou o streaming de ZIP: " + resposta);
+            }
+            gerarMensagemLog("Servidor: " + resposta);
+            statusLabel.setText("Recebendo stream de dados...");
 
-            if (resposta == null || !resposta.startsWith("150")) {
-                throw new IOException("Servidor recusou a solicitação de download: " + resposta);
+            // 3. RECEBER E DESCOMPACTAR O ZIP STREAM
+            try (ZipInputStream zis = new ZipInputStream(socket.getInputStream())) {
+                ZipEntry zipEntry;
+                byte[] buffer = new byte[8192];
+
+                while ((zipEntry = zis.getNextEntry()) != null) {
+                    File novoArquivo = new File(pastaAlvo, zipEntry.getName());
+                    gerarMensagemLog("Descompactando: " + novoArquivo.getAbsolutePath());
+
+                    // Garante que a estrutura de diretórios seja criada
+                    if (zipEntry.isDirectory()) {
+                        novoArquivo.mkdirs();
+                    } else {
+                        novoArquivo.getParentFile().mkdirs();
+                        try (FileOutputStream fos = new FileOutputStream(novoArquivo)) {
+                            int bytesLidos;
+                            while ((bytesLidos = zis.read(buffer)) != -1) {
+                                fos.write(buffer, 0, bytesLidos);
+                            }
+                        }
+                    }
+                    zis.closeEntry();
+                }
             }
 
-            // 4. Inicia o processo de recebimento dos arquivos
-            receberArquivos(pastaAlvo, socket.getInputStream(), entrada, saida);
+            // 4. ENVIAR CONFIRMAÇÃO E LER RESPOSTA FINAL
+            // É crucial enviar a confirmação DEPOIS que o stream foi completamente lido e fechado.
+            saida.println("STREAM_RECEIVED");
+            gerarMensagemLog("Servidor: " + entrada.readLine()); // "226 Transferência..."
 
-            // 5. Após o loop de recebimento, o servidor envia uma mensagem final.
-            // A leitura do "226" deve ocorrer APÓS o loop de END_FOLDER.
-            resposta = entrada.readLine();
-            gerarMensagemLog("SERVIDOR (fim): " + resposta);
+            gerarMensagemLog("=== DOWNLOAD (ZIP STREAM) CONCLUÍDO COM SUCESSO ===");
+            statusLabel.setText("Download concluído.");
 
-            if (resposta == null || !resposta.startsWith("226")) {
-                throw new IOException("O download pode ter sido incompleto. Resposta final: " + resposta);
-            }
-
-            gerarMensagemLog("=== DOWNLOAD CONCLUÍDO COM SUCESSO ===");
         } catch (Exception e) {
-            gerarMensagemLog("ERRO CRÍTICO no download: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-            // Propaga a exceção para que a UI possa exibi-la.
+            gerarMensagemLog("ERRO CRÍTICO no download (ZIP Stream): " + e.getMessage());
+            statusLabel.setText("Erro no download.");
             throw e;
         }
     }

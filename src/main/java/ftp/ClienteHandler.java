@@ -4,6 +4,9 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Arrays;
 
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
 /* Classe de handler de cliente para o servidor. */
 public class ClienteHandler implements Runnable {
     private final Socket cliente;
@@ -175,7 +178,6 @@ public class ClienteHandler implements Runnable {
         }
     }
 
-    /* Gerencia o download da pasta */
     private void handleDownloadPasta(String nomePasta) {
         try {
             File pastaFonte = new File(Servidor.getRoot(), nomePasta);
@@ -184,20 +186,56 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            saida.println("150 Iniciando download da pasta: " + nomePasta);
-
-            // Inicia o envio recursivo dos arquivos da pasta
-            enviarArquivos(pastaFonte, pastaFonte);
-
-            // Sinaliza o fim da transferência para o cliente
-            saida.println("END_FOLDER");
-            saida.flush(); // Garante o envio imediato
-
-            saida.println("226 Download concluído");
+            // 1. INFORMA AO CLIENTE QUE O STREAMING VAI COMEÇAR
+            saida.println("150 Iniciando streaming da pasta como arquivo ZIP.");
             saida.flush();
+
+            // 2. CRIA UM ZIP STREAM DIRETAMENTE PARA O OUTPUTSTREAM DO SOCKET
+            try (ZipOutputStream zos = new ZipOutputStream(cliente.getOutputStream())) {
+                adicionarPastaAoZip(pastaFonte, pastaFonte, zos);
+            } // O try-with-resources garante que o zos.close() seja chamado, finalizando o ZIP.
+
+            cliente.getOutputStream().flush();
+
+            // 3. AGUARDA CONFIRMAÇÃO DO CLIENTE E ENVIA RESPOSTA FINAL
+            // É importante ler a confirmação APÓS o stream ter sido fechado.
+            String confirmacao = entrada.readLine();
+            if ("STREAM_RECEIVED".equals(confirmacao)) {
+                saida.println("226 Transferência por stream concluída com sucesso.");
+            } else {
+                saida.println("550 Ocorreu um erro, o cliente não confirmou o recebimento.");
+            }
+
         } catch (Exception e) {
-            System.err.println("Erro no download: " + e.getMessage());
-            saida.println("550 Erro no download: " + e.getMessage());
+            System.err.println("Erro no download (ZIP Stream): " + e.getMessage());
+            // Não podemos enviar uma mensagem de erro aqui se o socket já estiver sendo usado para o ZIP
+        }
+    }
+
+    private void adicionarPastaAoZip(File pasta, File pastaBase, ZipOutputStream zos) throws IOException {
+        File[] arquivos = pasta.listFiles();
+        if (arquivos == null) return;
+        Arrays.sort(arquivos);
+
+        byte[] buffer = new byte[8192];
+
+        for (File arquivo : arquivos) {
+            if (arquivo.isDirectory()) {
+                adicionarPastaAoZip(arquivo, pastaBase, zos);
+                continue;
+            }
+
+            String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString().replace(File.separator, "/");
+            ZipEntry zipEntry = new ZipEntry(caminhoRelativo);
+            zos.putNextEntry(zipEntry);
+
+            try (FileInputStream fis = new FileInputStream(arquivo)) {
+                int bytesLidos;
+                while ((bytesLidos = fis.read(buffer)) != -1) {
+                    zos.write(buffer, 0, bytesLidos);
+                }
+            }
+            zos.closeEntry();
         }
     }
 
