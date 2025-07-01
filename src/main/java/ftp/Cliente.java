@@ -632,40 +632,56 @@ public class Cliente extends JFrame {
         }).start();
     }
 
-    private void executarDownload (String pasta, File localSalvamento) throws Exception {
-        gerarMensagemLog("Iniciando download de: " + pasta);
+    private void executarDownload(String pasta, File localSalvamento) throws Exception {
+        gerarMensagemLog("=== INICIANDO DOWNLOAD DA PASTA: " + pasta + " ===");
 
-        /* Pegando o nome original e o ID */
         String nomeOriginal = FolderIdUtil.extrairNomeOriginal(pasta);
         File pastaAlvo = new File(localSalvamento, nomeOriginal);
 
-        /* Garantindo que a pasta alvo existe antes de começar o download */
         if (!pastaAlvo.exists() && !pastaAlvo.mkdirs()) {
-            throw new Exception("Não foi possível criar o diretório: " + pastaAlvo.getAbsolutePath());
+            throw new IOException("Não foi possível criar o diretório de destino: " + pastaAlvo.getAbsolutePath());
         }
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
              BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter saida = new PrintWriter(socket.getOutputStream(), false)) {
+             // Habilita o auto-flush para garantir que os comandos sejam enviados imediatamente.
+             PrintWriter saida = new PrintWriter(socket.getOutputStream(), true)) {
 
-            entrada.readLine();
+            socket.setSoTimeout(30000); // Timeout de 30 segundos
 
-            saida.println("DOWNLOAD_FOLDER " + pasta);
-            saida.flush();
-
+            // Lê a mensagem de boas-vindas do servidor (ex: "220 Servidor Pronto")
             String resposta = entrada.readLine();
-            gerarMensagemLog("Servidor: " + resposta);
+            gerarMensagemLog("SERVIDOR (conexão): " + resposta);
+
+            // Envia o comando para iniciar o download
+            gerarMensagemLog("ENVIANDO: DOWNLOAD_FOLDER " + pasta);
+            saida.println("DOWNLOAD_FOLDER " + pasta);
+
+            // Lê a resposta do servidor para o comando de download
+            resposta = entrada.readLine();
+            gerarMensagemLog("SERVIDOR (download): " + resposta);
 
             if (!resposta.startsWith("150")) {
-                throw new Exception("Servidor recusou o download: " + resposta);
+                throw new IOException("Servidor recusou a solicitação de download: " + resposta);
             }
 
-            //receberArquivos(pasta, socket, entrada, saida);
+            // Chama o método para receber os arquivos, que já estava correto.
             receberArquivos(pastaAlvo, socket, entrada, saida);
 
-            resposta = entrada.readLine(); // END_FOLDER
-            resposta = entrada.readLine(); // 226 Download concluído
-            gerarMensagemLog("Download finalizado: " + resposta);
+            // Após `receberArquivos` terminar (ao encontrar "END_FOLDER"),
+            // o servidor enviará uma mensagem final de conclusão.
+            resposta = entrada.readLine();
+            gerarMensagemLog("SERVIDOR (fim): " + resposta);
+
+            if (resposta == null || !resposta.startsWith("226")) {
+                throw new IOException("O download pode ter sido incompleto. Resposta final: " + resposta);
+            }
+
+            gerarMensagemLog("=== DOWNLOAD CONCLUÍDO COM SUCESSO ===");
+        } catch (Exception e) {
+            gerarMensagemLog("ERRO CRÍTICO no download: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            // Propaga a exceção para que a UI possa exibi-la.
+            throw e;
         }
     }
 

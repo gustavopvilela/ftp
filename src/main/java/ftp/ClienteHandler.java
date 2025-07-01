@@ -2,6 +2,7 @@ package ftp;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.Arrays;
 
 /* Classe de handler de cliente para o servidor. */
 public class ClienteHandler implements Runnable {
@@ -196,32 +197,51 @@ public class ClienteHandler implements Runnable {
     }
 
     /* Envia os arquivos para o cliente recursivamente */
-    private void enviarArquivos (File pasta, File pastaBase) throws IOException {
+    private void enviarArquivos(File pasta, File pastaBase) throws IOException {
         File[] arquivos = pasta.listFiles();
-        if (arquivos == null || arquivos.length == 0) return;
+        if (arquivos == null) {
+            return;
+        }
+
+        // Ordena os arquivos para garantir uma ordem consistente no envio.
+        Arrays.sort(arquivos);
 
         for (File arquivo : arquivos) {
+            // Se for um diretório, chama a função recursivamente
             if (arquivo.isDirectory()) {
                 enviarArquivos(arquivo, pastaBase);
-            }
-            else {
-                /* Verifica o caminho relativo */
-                String caminhoRelativo = pastaBase.toPath().relativize(pasta.toPath()).toString();
+            } else {
+                // Calcula o caminho relativo do arquivo em relação à pasta base do download.
+                // Isso garante que a estrutura de pastas seja recriada no cliente.
+                String caminhoRelativo = pastaBase.toPath().relativize(arquivo.toPath()).toString();
 
+                // Substitui o separador de arquivos do sistema pelo separador de URL ("/") para consistência.
+                caminhoRelativo = caminhoRelativo.replace(File.separator, "/");
+
+                // Envia o comando FILE: com o caminho relativo.
                 saida.println("FILE:" + caminhoRelativo);
+                // Envia o tamanho do arquivo.
                 saida.println(arquivo.length());
+                saida.flush(); // Garante o envio imediato dos metadados.
 
                 /* Envia o conteúdo do arquivo */
                 try (FileInputStream fis = new FileInputStream(arquivo)) {
-                    byte[] buffer = new byte[1024];
+                    byte[] buffer = new byte[4096];
                     int bytesLidos;
-
                     while ((bytesLidos = fis.read(buffer)) != -1) {
                         cliente.getOutputStream().write(buffer, 0, bytesLidos);
                     }
+                    cliente.getOutputStream().flush();
                 }
 
-                entrada.readLine();
+                // Aguarda a confirmação "OK" do cliente antes de enviar o próximo arquivo.
+                // Isso cria um fluxo sincronizado e confiável.
+                String confirmacao = entrada.readLine();
+                if (!"OK".equals(confirmacao)) {
+                    System.err.println("Cliente não confirmou o recebimento do arquivo: " + caminhoRelativo + ". Abortando download.");
+                    // Para a transferência se o cliente não confirmar.
+                    return;
+                }
             }
         }
     }
