@@ -1,4 +1,4 @@
-package utils;
+package styles;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;

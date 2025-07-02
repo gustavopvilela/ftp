@@ -1,8 +1,8 @@
-package ftp;
+package ftp.cliente;
 
 import utils.FolderIdUtil;
-import utils.CustomTableCellRenderer;
-import utils.CustomTableHeaderRenderer;
+import styles.CustomTableCellRenderer;
+import styles.CustomTableHeaderRenderer;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;

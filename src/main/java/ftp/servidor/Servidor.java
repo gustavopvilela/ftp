@@ -1,4 +1,4 @@
-package ftp;
+package ftp.servidor;
 
 import java.io.File;
 import java.io.IOException;

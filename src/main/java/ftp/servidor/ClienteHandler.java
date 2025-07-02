@@ -1,4 +1,4 @@
-package ftp;
+package ftp.servidor;
 
 import java.io.*;
 import java.net.Socket;
@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
 import utils.FolderIdUtil;
 
 /* Classe de handler de cliente para o servidor. */
