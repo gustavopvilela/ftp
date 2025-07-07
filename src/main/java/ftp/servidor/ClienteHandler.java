@@ -9,26 +9,23 @@ import java.util.zip.ZipOutputStream;
 
 import utils.FolderIdUtil;
 
-/* Classe de handler de cliente para o servidor. */
 public class ClienteHandler implements Runnable {
     private final Socket cliente;
     private BufferedReader entrada;
     private PrintWriter saida;
     private String pastaAtual = Servidor.getRoot();
-    private final Consumer<String> logger; // Logger da GUI
+    private final Consumer<String> logger;
     private final String clienteId;
 
     public ClienteHandler(Socket cliente, Consumer<String> logger) {
         this.cliente = cliente;
         this.logger = logger;
-        // Identificador único para este cliente no log
         this.clienteId = cliente.getInetAddress().getHostAddress() + ":" + cliente.getPort();
     }
 
     @Override
     public void run() {
         try {
-            /* Configuração dos sistemas de comunicação */
             entrada = new BufferedReader(new InputStreamReader(cliente.getInputStream()));
             saida = new PrintWriter(cliente.getOutputStream(), true);
 
@@ -47,7 +44,6 @@ public class ClienteHandler implements Runnable {
         }
     }
 
-    // Método auxiliar para adicionar o ID do cliente ao log
     private void log(String mensagem) {
         logger.accept(String.format("[%s] %s", clienteId, mensagem));
     }
@@ -227,7 +223,6 @@ public class ClienteHandler implements Runnable {
     }
 
     private void adicionarPastaAoZip(File pasta, File pastaBase, ZipOutputStream zos) throws IOException {
-        // ... (o conteúdo deste método permanece o mesmo)
         File[] arquivos = pasta.listFiles();
         if (arquivos == null) return;
         Arrays.sort(arquivos);
@@ -255,7 +250,6 @@ public class ClienteHandler implements Runnable {
     }
 
     private void deletarPasta(File pasta) {
-        // ... (o conteúdo deste método permanece o mesmo)
         File[] arquivos = pasta.listFiles();
         if (arquivos != null) {
             for (File arquivo : arquivos) {
@@ -278,6 +272,4 @@ public class ClienteHandler implements Runnable {
             log("ERRO ao fechar conexão: " + e.getMessage());
         }
     }
-
-    // O main antigo foi removido, pois a aplicação agora é iniciada pela ServidorGUI
 }

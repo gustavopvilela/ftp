@@ -10,21 +10,20 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class ServidorGUI extends JFrame {
-    // Trocado JTextArea por JTextPane para suportar cores
     private final JTextPane logPane;
     private final JTextField portaField;
     private final JButton toggleButton;
 
     private Servidor servidor;
-    private int portaAtual = 12381; // Porta padrão inicial
+    private int portaAtual = 12381;
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy, HH:mm:ss");
 
     // Define as cores para os logs
-    private final Color COR_ERRO = new Color(210, 4, 45); // Vermelho escuro
-    private final Color COR_AVISO = new Color(255, 127, 0); // Laranja
-    private final Color COR_SUCESSO = new Color(0, 128, 0); // Verde escuro
-    private final Color COR_INFO = new Color(0, 100, 200); // Azul
+    private final Color COR_ERRO = new Color(210, 4, 45);
+    private final Color COR_AVISO = new Color(255, 127, 0);
+    private final Color COR_SUCESSO = new Color(0, 128, 0);
+    private final Color COR_INFO = new Color(0, 100, 200);
     private final Color COR_PADRAO = Color.BLACK; // Preto
     private final Color COR_TIMESTAMP = Color.GRAY; // Cinza para o horário
 
@@ -33,7 +32,6 @@ public class ServidorGUI extends JFrame {
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // Painel de Controle (Porta e Botão)
         JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         controlPanel.setBorder(new TitledBorder("Controles"));
 
@@ -47,7 +45,6 @@ public class ServidorGUI extends JFrame {
 
         add(controlPanel, BorderLayout.NORTH);
 
-        // Área de Log agora usa JTextPane
         logPane = new JTextPane();
         logPane.setEditable(false);
         logPane.setFont(new Font("Arial", Font.BOLD, 12));
@@ -60,7 +57,6 @@ public class ServidorGUI extends JFrame {
         scrollPane.setBorder(new TitledBorder("Log de Atividade"));
         add(scrollPane, BorderLayout.CENTER);
 
-        // Listener para fechar a janela
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -128,11 +124,6 @@ public class ServidorGUI extends JFrame {
         }
     }
 
-    /**
-     * Adiciona uma string ao JTextPane com uma cor específica.
-     * @param texto A mensagem a ser adicionada.
-     * @param cor A cor do texto.
-     */
     private void appendColorido(String texto, Color cor) {
         StyleContext sc = StyleContext.getDefaultStyleContext();
         AttributeSet aset = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, cor);
@@ -143,15 +134,10 @@ public class ServidorGUI extends JFrame {
         try {
             doc.insertString(doc.getLength(), texto, aset);
         } catch (BadLocationException e) {
-            // Não deve acontecer
             e.printStackTrace();
         }
     }
 
-    /**
-     * Adiciona a mensagem de log, colorindo-a com base em palavras-chave.
-     * @param mensagem A mensagem de log vinda do servidor ou do handler.
-     */
     public void adicionarLog(String mensagem) {
         SwingUtilities.invokeLater(() -> {
             String timestamp = String.format("[%s] ", LocalDateTime.now().format(formatter));
@@ -160,7 +146,6 @@ public class ServidorGUI extends JFrame {
             String lowerCaseMsg = mensagem.toLowerCase();
             Color cor;
 
-            // Define a cor com base em palavras-chave
             if (lowerCaseMsg.contains("erro")) {
                 cor = COR_ERRO;
             } else if (lowerCaseMsg.contains("aviso")) {
@@ -175,7 +160,6 @@ public class ServidorGUI extends JFrame {
 
             appendColorido(mensagem + "\n", cor); // Adiciona a mensagem com a cor escolhida
 
-            // Auto-scroll para o final
             logPane.setCaretPosition(logPane.getDocument().getLength());
         });
     }

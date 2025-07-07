@@ -17,7 +17,7 @@ public class Servidor {
     private ServerSocket servidorSocket;
     private final ExecutorService pool;
     private volatile boolean running = false;
-    private final Consumer<String> logger; // Interface funcional para logar na GUI
+    private final Consumer<String> logger;
 
     public Servidor(int porta, Consumer<String> logger) {
         this.porta = porta;
@@ -30,7 +30,6 @@ public class Servidor {
         }
     }
 
-    /* Inicia o servidor e aguarda conexões */
     public void start() {
         if (running) {
             logger.accept("AVISO: Servidor já está em execução.");
@@ -46,7 +45,6 @@ public class Servidor {
                 try {
                     Socket clienteSocket = servidorSocket.accept();
                     logger.accept("Nova conexão aceita: " + clienteSocket.getInetAddress().getHostAddress());
-                    // Passa o logger para o ClienteHandler
                     pool.submit(new ClienteHandler(clienteSocket, logger));
                 } catch (SocketException e) {
                     if (!running) {
@@ -78,12 +76,12 @@ public class Servidor {
         running = false;
         try {
             if (servidorSocket != null && !servidorSocket.isClosed()) {
-                servidorSocket.close(); // Isso irá interromper o accept() e lançar uma SocketException
+                servidorSocket.close();
             }
         } catch (IOException e) {
             logger.accept("ERRO: Problema ao fechar o socket do servidor: " + e.getMessage());
         } finally {
-            pool.shutdownNow(); // Força o encerramento das threads dos clientes
+            pool.shutdownNow();
             logger.accept("Processo de parada do servidor iniciado.");
         }
     }

@@ -69,10 +69,9 @@ public class Cliente extends JFrame {
         setLayout(new BorderLayout());
 
         JPanel conexaoPanel = createConexaoPanel();
-        JPanel uploadPanel = createUploadPanel(); // Este painel agora incluirá o status
+        JPanel uploadPanel = createUploadPanel();
         JPanel servidorPanel = createServidorPanel();
         JPanel logPanel = createLogPanel();
-        // A linha que criava o statusPanel foi removida daqui.
 
         JPanel topPanel = new JPanel();
         topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
@@ -84,7 +83,6 @@ public class Cliente extends JFrame {
 
         add(topPanel, BorderLayout.NORTH);
         add(centerSplitPane, BorderLayout.CENTER);
-        // A linha que adicionava o statusPanel ao SOUTH foi removida.
 
         setSize(1200, 700);
         setLocationRelativeTo(null);
@@ -93,7 +91,6 @@ public class Cliente extends JFrame {
     }
 
     private JPanel createConexaoPanel() {
-        //... (Este método não muda)
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(new TitledBorder("Configuração do servidor"));
 
@@ -120,7 +117,6 @@ public class Cliente extends JFrame {
     }
 
     private void testarConexao(ActionEvent e) {
-        //... (Este método não muda)
         String novoHost = hostField.getText().trim();
         String portaTexto = portaField.getText().trim();
 
@@ -213,12 +209,10 @@ public class Cliente extends JFrame {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(new TitledBorder("Upload de pasta"));
 
-        // A variável agora é um campo da classe
         selecionarPastaButton = new JButton("Selecionar Pasta");
         selecionarPastaButton.addActionListener(this::selecionarPasta);
 
         uploadButton = new JButton("Enviar para o servidor");
-        // O estado inicial será definido em atualizarEstadoControles()
         uploadButton.addActionListener(this::uploadPasta);
 
         panel.add(selecionarPastaButton);
@@ -233,7 +227,6 @@ public class Cliente extends JFrame {
         return panel;
     }
 
-    /* --- PAINEL DO SERVIDOR (COM JTABLE) --- */
     private JPanel createServidorPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new TitledBorder("Pastas no servidor"));
@@ -251,26 +244,18 @@ public class Cliente extends JFrame {
         pastasServidorTable.setFillsViewportHeight(true);
         pastasServidorTable.getTableHeader().setReorderingAllowed(false);
 
-        // --- INÍCIO DA ESTILIZAÇÃO ---
-
-        // 1. Estilizar o cabeçalho da tabela
         JTableHeader header = pastasServidorTable.getTableHeader();
         header.setDefaultRenderer(new CustomTableHeaderRenderer(pastasServidorTable));
         header.setFont(new Font("Arial", Font.BOLD, 12));
 
-        // 2. Aumentar a altura da linha para criar padding vertical
         pastasServidorTable.setRowHeight(28);
 
-        // 3. Aplicar o renderizador personalizado para padding e alinhamento nas células
         CustomTableCellRenderer cellRenderer = new CustomTableCellRenderer();
         pastasServidorTable.setDefaultRenderer(Object.class, cellRenderer);
 
-        // 4. Ajustar largura das colunas
         pastasServidorTable.getColumnModel().getColumn(0).setPreferredWidth(70);
         pastasServidorTable.getColumnModel().getColumn(1).setPreferredWidth(280);
         pastasServidorTable.getColumnModel().getColumn(2).setPreferredWidth(100);
-
-        // --- FIM DA ESTILIZAÇÃO ---
 
         JScrollPane scrollPane = new JScrollPane(pastasServidorTable);
         panel.add(scrollPane, BorderLayout.CENTER);
@@ -297,7 +282,6 @@ public class Cliente extends JFrame {
         return panel;
     }
 
-    /* --- PAINEL DE LOG (COM JTEXTPANE) --- */
     private JPanel createLogPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new TitledBorder("Log de Atividade"));
@@ -315,14 +299,6 @@ public class Cliente extends JFrame {
 
         return panel;
     }
-
-//    private JPanel createStatusPanel() {
-//        //... (Este método não muda)
-//        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-//        statusLabel = new JLabel("Pronto para uso");
-//        panel.add(statusLabel);
-//        return panel;
-//    }
 
     private String gerarIdDaPasta(File pasta) throws IOException {
         return FolderIdUtil.obterId(pasta);
@@ -348,8 +324,6 @@ public class Cliente extends JFrame {
             gerarMensagemLog("Pasta selecionada: " + pastaSelecionada.getAbsolutePath() + " | Pronto para enviar para o servidor.", COR_PADRAO);
             gerarMensagemLog("ID gerado para a pasta: " + pastaSelecionadaId, COR_PADRAO);
 
-            // ATUALIZA O ESTADO DOS CONTROLES AQUI TAMBÉM
-            // para habilitar o botão de upload após selecionar uma pasta
             atualizarEstadoControles();
 
         } catch (IOException ex) {
@@ -358,7 +332,6 @@ public class Cliente extends JFrame {
     }
 
     private void uploadPasta(ActionEvent e) {
-        //... (Este método não muda)
         if (pastaSelecionada == null) {
             mostrarErro("Nenhuma pasta selecionada");
             return;
@@ -391,7 +364,6 @@ public class Cliente extends JFrame {
 
     private void executarUpload() {
         gerarMensagemLog("=== INICIANDO UPLOAD ===", COR_INFO);
-        // ... Lógica de upload não muda, mas chamadas de log agora podem ter cor
         gerarMensagemLog("Conectando ao servidor " + hostAtual + ":" + portaAtual, COR_INFO);
 
         try (Socket socket = new Socket(hostAtual, portaAtual);
@@ -434,7 +406,6 @@ public class Cliente extends JFrame {
     }
 
     private List<File> coletarTodosArquivos(File pastaRaiz) {
-        //... (Este método não muda)
         List<File> arquivos = new ArrayList<>();
         coletarArquivosRecursivamente(pastaRaiz, arquivos);
         arquivos.sort(Comparator.comparing(f -> pastaRaiz.toPath().relativize(f.toPath()).toString()));
@@ -442,7 +413,6 @@ public class Cliente extends JFrame {
     }
 
     private void coletarArquivosRecursivamente(File pasta, List<File> arquivos) {
-        //... (Este método não muda)
         File[] conteudo = pasta.listFiles();
         if (conteudo == null) return;
         Arrays.sort(conteudo, Comparator.comparing(File::getName));
@@ -451,7 +421,6 @@ public class Cliente extends JFrame {
     }
 
     private void enviarArquivosComConfirmacao(List<File> arquivos, Socket socket, PrintWriter saida, BufferedReader entrada) throws Exception {
-        //... (Este método não muda, mas o log terá cores)
         int totalArquivos = arquivos.size();
         for (int i = 0; i < totalArquivos; i++) {
             File arquivo = arquivos.get(i);
@@ -473,11 +442,9 @@ public class Cliente extends JFrame {
         }
     }
 
-    /* --- ATUALIZAÇÃO DA TABELA DE PASTAS --- */
     private void atualizarPastasServidor() {
         new Thread(() -> {
             try {
-                // Limpa a tabela antes de buscar novos dados
                 SwingUtilities.invokeLater(() -> tableModel.setRowCount(0));
 
                 List<String[]> pastas = getPastasServidor();
@@ -534,7 +501,6 @@ public class Cliente extends JFrame {
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 
-    /* --- DOWNLOAD DE PASTA (usando a JTable) --- */
     private void downloadPasta(ActionEvent e) {
         int selectedRow = pastasServidorTable.getSelectedRow();
         if (selectedRow == -1) {
@@ -542,7 +508,6 @@ public class Cliente extends JFrame {
             return;
         }
 
-        // Constrói o nome da pasta no formato que o servidor espera: nome_id
         String id = (String) tableModel.getValueAt(selectedRow, 0);
         String nome = (String) tableModel.getValueAt(selectedRow, 1);
         String pastaServidor = nome + "_" + id;
@@ -577,7 +542,6 @@ public class Cliente extends JFrame {
     }
 
     private void executarDownload(String pasta, File localSalvamento) throws Exception {
-        //... (Este método não muda)
         gerarMensagemLog("=== INICIANDO DOWNLOAD ===", COR_INFO);
         String nomeOriginal = FolderIdUtil.extrairNomeOriginal(pasta);
         File pastaAlvo = new File(localSalvamento, nomeOriginal);
@@ -621,23 +585,13 @@ public class Cliente extends JFrame {
         }
     }
 
-    /* --- MÉTODOS DE LOG COLORIDO --- */
-    /**
-     * Adiciona uma string ao JTextPane com uma cor específica, respeitando a fonte do painel.
-     * @param texto A mensagem a ser adicionada.
-     * @param cor A cor do texto.
-     */
     private void appendColorido(String texto, Color cor) {
         StyledDocument doc = logPane.getStyledDocument();
 
-        // Cria um conjunto de atributos para o estilo do texto
         SimpleAttributeSet style = new SimpleAttributeSet();
 
-        // 1. Define a cor do texto
         StyleConstants.setForeground(style, cor);
 
-        // 2. CORREÇÃO: Define a família, tamanho e estilo da fonte
-        // com base na fonte que já está configurada no logPane.
         Font logFont = logPane.getFont();
         StyleConstants.setFontFamily(style, logFont.getFamily());
         StyleConstants.setFontSize(style, logFont.getSize());
@@ -645,10 +599,8 @@ public class Cliente extends JFrame {
         StyleConstants.setItalic(style, logFont.isItalic());
 
         try {
-            // Insere o texto no final do documento com o estilo completo
             doc.insertString(doc.getLength(), texto, style);
         } catch (BadLocationException e) {
-            // Este erro é improvável de acontecer aqui
             e.printStackTrace();
         }
     }
